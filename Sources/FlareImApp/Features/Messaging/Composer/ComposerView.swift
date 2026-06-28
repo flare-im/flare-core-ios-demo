@@ -64,11 +64,28 @@ struct ComposerView: View {
             }
 
             ZStack {
-                composerInput
-                    .disabled(messaging.runtimeStatus.isBlocking)
-                    .onChange(of: text) { value in
-                        Task { await messaging.setTyping(!value.isEmpty) }
+                // 版式对齐 Flutter（见 examples/COMPOSER-DESIGN-SPEC.md）：工具栏精确为 6 图标，
+                // 「展开」与「发送」移至输入行尾部——iOS 多行输入无 IME 发送键，发送须显式按钮。
+                HStack(alignment: .bottom, spacing: FlareDesign.Spacing.xs) {
+                    composerInput
+                        .disabled(messaging.runtimeStatus.isBlocking)
+                        .onChange(of: text) { value in
+                            Task { await messaging.setTyping(!value.isEmpty) }
+                        }
+                    if !richInputMode {
+                        ComposerTool(
+                            symbol: inputExpanded ? "arrow.down.right.and.arrow.up.left" : "arrow.up.left.and.arrow.down.right",
+                            title: inputExpanded ? String(localized: "Collapse input") : String(localized: "Expand input"),
+                            selected: inputExpanded
+                        ) {
+                            panel = .none
+                            inputExpanded.toggle()
+                        }
+                        ComposerSendButton(enabled: canSend) {
+                            sendCurrentText()
+                        }
                     }
+                }
 
                 if audioRecorder.isRecording {
                     VoiceRecorderBar(
@@ -84,52 +101,46 @@ struct ComposerView: View {
             .padding(.top, FlareDesign.Spacing.sm)
 
             if !richInputMode {
+                // 6 槽均分图标工具栏，对齐 Flutter：表情 / @提及 / 语音 / 图片 / 富文本 / 更多。
                 HStack(spacing: 0) {
-                    ComposerTool(
-                        symbol: inputExpanded ? "arrow.down.right.and.arrow.up.left" : "arrow.up.left.and.arrow.down.right",
-                        title: inputExpanded ? String(localized: "Collapse input") : String(localized: "Expand input"),
-                        selected: inputExpanded
-                    ) {
-                        panel = .none
-                        inputExpanded.toggle()
-                    }
-                    Spacer(minLength: 0)
                     ComposerTool(symbol: "face.smiling", title: String(localized: "Emoji"), selected: panel == .emoji) {
                         toggle(.emoji)
                     }
-                    Spacer(minLength: 0)
+                    .frame(maxWidth: .infinity)
+                    ComposerTool(symbol: "at", title: String(localized: "Mention")) {
+                        text += "@"
+                    }
+                    .frame(maxWidth: .infinity)
                     ComposerVoiceTool(
                         isRecording: audioRecorder.isRecording,
                         isCancelling: voiceDragCancelling,
                         onChanged: handleVoiceDragChanged,
                         onEnded: handleVoiceDragEnded
                     )
-                    Spacer(minLength: 0)
+                    .frame(maxWidth: .infinity)
                     #if canImport(PhotosUI)
                     PhotosPicker(selection: $selectedPhotoItem, matching: .images) {
                         ComposerToolIcon(symbol: "photo", title: String(localized: "Image"))
                     }
                     .buttonStyle(.plain)
                     .accessibilityLabel(Text("Image"))
+                    .frame(maxWidth: .infinity)
                     #else
                     ComposerTool(symbol: "photo", title: String(localized: "Image")) {
                         formDraft = ComposerFormDraft(kind: .imageFallback)
                     }
+                    .frame(maxWidth: .infinity)
                     #endif
-                    Spacer(minLength: 0)
                     ComposerTextTool(title: String(localized: "Rich text"), selected: richInputMode) {
                         enterRichInputMode()
                     }
-                    Spacer(minLength: 0)
+                    .frame(maxWidth: .infinity)
                     ComposerTool(symbol: panel == .more ? "xmark" : "plus.circle", title: String(localized: "More"), selected: panel == .more) {
                         toggle(.more)
                     }
-                    Spacer(minLength: 0)
-                    ComposerSendButton(enabled: canSend) {
-                        sendCurrentText()
-                    }
+                    .frame(maxWidth: .infinity)
                 }
-                .padding(.horizontal, FlareDesign.Spacing.xl)
+                .padding(.horizontal, FlareDesign.Spacing.lg)
                 .padding(.top, FlareDesign.Spacing.sm)
                 .padding(.bottom, FlareDesign.Spacing.xxs)
             }

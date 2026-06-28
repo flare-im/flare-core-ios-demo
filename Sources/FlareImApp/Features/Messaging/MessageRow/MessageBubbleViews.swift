@@ -267,9 +267,90 @@ private struct RichTextMessageView: View {
     }
 
     private var markdown: String {
-        content.stringValue("markdown", "docMarkdown", "body") ??
+        // 富文档：优先把 RichDoc v2 docJson（始终存在的核心规范化产物）转成 Markdown 再渲染，
+        // 比依赖未必下发的 sourcePayload.markdown 更稳；都没有再回退 plainText。
+        if let docJson = content.stringValue("docJson"),
+           let md = RichDocMarkdown.fromDocJson(docJson) {
+            return md
+        }
+        return content.stringValue("markdown", "docMarkdown", "body") ??
             content.stringValue("plainText", "searchText", "title") ??
             content.previewText
+    }
+}
+
+/// 把 RichDoc v2 docJson 转 Markdown，喂给已有的 [RichMarkdownView]（heading/列表/引用 + bold/italic/code）。
+enum RichDocMarkdown {
+    static func fromDocJson(_ json: String) -> String? {
+        guard let data = json.data(using: .utf8),
+              let obj = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+              let children = obj["children"] as? [[String: Any]] else { return nil }
+        var lines: [String] = []
+        for node in children { emit(node, into: &lines, listPrefix: nil) }
+        let md = lines.joined(separator: "\n").trimmingCharacters(in: .whitespacesAndNewlines)
+        return md.isEmpty ? nil : md
+    }
+
+    private static func emit(_ node: [String: Any], into lines: inout [String], listPrefix: String?) {
+        switch node["type"] as? String {
+        case "heading":
+            let level = max(1, min((node["level"] as? Int) ?? 1, 6))
+            lines.append(String(repeating: "#", count: level) + " " + inline(node))
+        case "paragraph":
+            lines.append((listPrefix ?? "") + inline(node))
+        case "blockquote":
+            lines.append("> " + inline(node))
+        case "code_block":
+            lines.append("```"); lines.append(inline(node)); lines.append("```")
+        case "bullet_list":
+            childNodes(node).forEach { emit($0, into: &lines, listPrefix: "- ") }
+        case "ordered_list":
+            var n = 1
+            childNodes(node).forEach { emit($0, into: &lines, listPrefix: "\(n). "); n += 1 }
+        case "list_item":
+            childNodes(node).forEach { emit($0, into: &lines, listPrefix: listPrefix) }
+        default:
+            let text = inline(node)
+            if !text.isEmpty { lines.append(text) }
+        }
+    }
+
+    private static func childNodes(_ node: [String: Any]) -> [[String: Any]] {
+        node["children"] as? [[String: Any]] ?? []
+    }
+
+    private static func inline(_ node: [String: Any]) -> String {
+        var s = ""
+        appendInline(node, into: &s)
+        return s
+    }
+
+    private static func appendInline(_ node: [String: Any], into s: inout String) {
+        guard let children = node["children"] as? [[String: Any]] else {
+            if node["type"] as? String == "text" { s += markText(node) }
+            return
+        }
+        for c in children {
+            switch c["type"] as? String {
+            case "text": s += markText(c)
+            case "hard_break": s += "\n"
+            default: appendInline(c, into: &s)
+            }
+        }
+    }
+
+    private static func markText(_ node: [String: Any]) -> String {
+        guard var text = node["text"] as? String, !text.isEmpty else { return "" }
+        guard let marks = node["marks"] as? [[String: Any]] else { return text }
+        for m in marks {
+            switch m["type"] as? String {
+            case "bold", "strong": text = "**\(text)**"
+            case "italic", "em": text = "*\(text)*"
+            case "code": text = "`\(text)`"
+            default: break
+            }
+        }
+        return text
     }
 }
 

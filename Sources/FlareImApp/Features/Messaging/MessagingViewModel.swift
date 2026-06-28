@@ -463,6 +463,8 @@ final class MessagingViewModel: ObservableObject {
                 try await client.messages.recallMessage(request)
             case "edit":
                 try await client.messages.editTextByMessageId(request.merging(["text": AnySendable("Edited from iOS example")]) { $1 })
+            case "editRich":
+                try await client.messages.editRichDocByMessageId(request.merging(["markdown": AnySendable("## Edited rich doc\n\n- **bold** point\n- _italic_ point")]) { $1 })
             case "deleteSelf":
                 try await client.messages.deleteMessageForSelf(request)
             case "deleteEveryone":

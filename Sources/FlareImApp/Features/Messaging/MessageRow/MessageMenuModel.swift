@@ -14,6 +14,7 @@ enum MessageMenuActionKey: String, CaseIterable, Sendable {
     case copy
     case preview
     case edit
+    case editRich
     case delete
     case save
 }
@@ -111,6 +112,9 @@ struct MessageMenuModel: Equatable, Sendable {
         if canEdit && !quick.contains(where: { $0.key == .edit }) {
             list.append(item(.edit))
         }
+        if canEdit && message.content?.contentType == .richText {
+            list.append(item(.editRich))
+        }
         if canDelete {
             list.append(item(.delete))
         }
@@ -148,6 +152,8 @@ struct MessageMenuModel: Equatable, Sendable {
             return .init(key: key, title: "预览", symbol: "eye", isDestructive: false)
         case .edit:
             return .init(key: key, title: "编辑文本", symbol: "square.and.pencil", isDestructive: false)
+        case .editRich:
+            return .init(key: key, title: "编辑富文本", symbol: "doc.richtext", isDestructive: false)
         case .delete:
             return .init(key: key, title: "删除", symbol: "trash", isDestructive: true)
         case .save:

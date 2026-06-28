@@ -405,6 +405,8 @@ struct MessageActionSheet: View {
             }
         case .edit:
             runAndClose { await messaging.messageAction("edit", message: message) }
+        case .editRich:
+            runAndClose { await messaging.messageAction("editRich", message: message) }
         case .delete:
             runAndClose { await messaging.messageAction("deleteSelf", message: message) }
         case .save:
