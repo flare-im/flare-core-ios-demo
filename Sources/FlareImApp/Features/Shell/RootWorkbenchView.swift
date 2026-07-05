@@ -4,18 +4,25 @@ struct RootWorkbenchView: View {
     @EnvironmentObject private var store: FlareAppStore
     @EnvironmentObject private var messaging: MessagingViewModel
     @EnvironmentObject private var environment: AppEnvironment
+    @State private var sessionResumeAttempted = false
 
     var body: some View {
         ZStack {
             FlareDesign.appBackground.ignoresSafeArea()
             if store.isLoggedIn {
                 WorkbenchView()
-            } else {
+            } else if sessionResumeAttempted {
                 LoginView()
             }
         }
         .preferredColorScheme(colorScheme)
         .loadingOverlay(environment.isBusy)
+        .task {
+            // 热启动：有会话档案则本地出图直进工作台，登录页只在无档案/恢复失败时出现。
+            guard !sessionResumeAttempted else { return }
+            await store.resumeSavedSession()
+            sessionResumeAttempted = true
+        }
     }
 
     private var colorScheme: ColorScheme? {

@@ -1,6 +1,12 @@
 import Combine
 import Foundation
+import Network
 import FlareCoreAppleSDK
+#if canImport(UIKit)
+import UIKit
+#elseif canImport(AppKit)
+import AppKit
+#endif
 
 /// 跨切面会话核心:拥有 SDK 客户端的生命周期 + 认证态 + 连接态 + 原始事件流。
 ///
@@ -24,6 +30,11 @@ final class AppSession: ObservableObject {
     private let clientFactory: SdkClientFactory
     private var eventSubscriptions: [any EventSubscription] = []
     private var nativeEventSubscription: [String: AnySendable]?
+    private var lastLoginDraft: LoginDraft?
+    private var lastDataURL: URL?
+    private var restoringConnection = false
+    private var pathMonitor: NWPathMonitor?
+    private var appStateObservers: [NSObjectProtocol] = []
 
     nonisolated init(clientFactory: SdkClientFactory = DefaultSdkClientFactory()) {
         self.clientFactory = clientFactory
@@ -67,19 +78,178 @@ final class AppSession: ObservableObject {
         currentUserId = draft.userId
         isLoggedIn = true
         connectionState = try await client.connection.getConnectionState()
+        lastLoginDraft = draft
+        lastDataURL = dataURL
+        startPlatformSignalBridge()
         return client
+    }
+
+    /// 热启动半段：创建 → 订阅 → init → prepare(开本地库,不连网) → 本地会话即已可读。
+    /// 连接（取 token + connect + 首次同步）由调用方在后台补（[connectInBackground]）。
+    @discardableResult
+    func resumeLocal(draft: LoginDraft, dataURL: URL, progress: @MainActor (String) -> Void) async throws -> any FlareImClientProtocol {
+        progress("Creating Apple SDK client")
+        let client = try clientFactory.makeClient(libraryPath: draft.libraryPath)
+        self.client = client
+        installEventSubscriptions(client)
+
+        progress("Initializing SDK")
+        var initConfig = try draft.sdkTransportConfig()
+        initConfig.merge([
+            "dataUrl": AnySendable(dataURL.absoluteString),
+            "tenantId": AnySendable(draft.tenantId),
+            "platform": AnySendable("apple"),
+            "runtime": AnySendable("swiftui-example")
+        ]) { _, new in new }
+        try await client.`init`(initConfig)
+
+        progress("Opening local store")
+        try await client.prepare(["userId": AnySendable(draft.userId)])
+        try await subscribeNativeEvents(client)
+
+        let mediaCacheRoot = dataURL.appendingPathComponent("media-cache").path
+        _ = try? await client.media.setMediaCacheRoot(["root": AnySendable(mediaCacheRoot)])
+        _ = try? await client.media.setMediaCacheMaxBytes(["maxBytes": AnySendable(Int64(268_435_456))]) // 256MB
+
+        currentUserId = draft.userId
+        isLoggedIn = true
+        lastLoginDraft = draft
+        lastDataURL = dataURL
+        startPlatformSignalBridge()
+        return client
+    }
+
+    /// 热启动网络半段：本地出图后在后台建连并完成首次同步；失败保持本地视图可用。
+    func connectInBackground() async {
+        guard let client, let draft = lastLoginDraft else { return }
+        do {
+            let ttl = UInt64(draft.tokenTtlSeconds) ?? 86400
+            let token = try await resolveToken(draft: draft, ttl: ttl)
+            try await client.connect([
+                "userId": AnySendable(draft.userId),
+                "token": AnySendable(token)
+            ])
+            connectionState = (try? await client.connection.getConnectionState()) ?? connectionState
+        } catch {
+            connectionState = (try? await client.connection.getConnectionState()) ?? .disconnected
+        }
+    }
+
+    @discardableResult
+    func ensureConnected(progress: @MainActor (String) -> Void) async throws -> any FlareImClientProtocol {
+        if let client, (try? await client.isConnected()) == true {
+            isLoggedIn = true
+            currentUserId = currentUserId ?? (lastLoginDraft?.userId)
+            connectionState = try await client.connection.getConnectionState()
+            return client
+        }
+
+        while restoringConnection {
+            try await Task.sleep(nanoseconds: 120_000_000)
+            if let client, (try? await client.isConnected()) == true {
+                connectionState = try await client.connection.getConnectionState()
+                return client
+            }
+        }
+
+        guard var draft = lastLoginDraft, let dataURL = lastDataURL else {
+            throw AppStoreError(message: "Login before using the SDK")
+        }
+
+        restoringConnection = true
+        defer { restoringConnection = false }
+
+        if draft.tokenOverride.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            draft.tokenSecret = LoginDefaults.tokenSecret()
+        }
+
+        progress("Reconnecting")
+        connectionState = .reconnecting
+        eventSubscriptions.forEach { $0.unsubscribe() }
+        eventSubscriptions.removeAll()
+        try? await client?.dispose()
+        client = nil
+        nativeEventSubscription = nil
+        isLoggedIn = false
+        currentUserId = nil
+        return try await start(draft: draft, dataURL: dataURL, progress: progress)
+    }
+
+    /// 平台原始信号桥：NWPathMonitor → SDK 网络变化（core 主动重连，不等心跳超时）、
+    /// 前后台通知 → 心跳降配 + 前台立即收敛。策略全在 core，这里只喂信号。
+    func startPlatformSignalBridge() {
+        guard pathMonitor == nil else { return }
+        let monitor = NWPathMonitor()
+        monitor.pathUpdateHandler = { [weak self] path in
+            let available = path.status == .satisfied
+            let kind: NetworkInterfaceKind = path.usesInterfaceType(.wifi) ? .wifi
+                : path.usesInterfaceType(.cellular) ? .cellular
+                : path.usesInterfaceType(.wiredEthernet) ? .ethernet
+                : available ? .other : .unknown
+            let expensive = path.isExpensive
+            Task { @MainActor [weak self] in
+                await self?.notifyNetworkChange(available: available, kind: kind, expensive: expensive)
+            }
+        }
+        monitor.start(queue: DispatchQueue(label: "flare.network.path-monitor"))
+        pathMonitor = monitor
+
+        let center = NotificationCenter.default
+        #if canImport(UIKit)
+        let foregroundName = UIApplication.didBecomeActiveNotification
+        let backgroundName = UIApplication.didEnterBackgroundNotification
+        #elseif canImport(AppKit)
+        let foregroundName = NSApplication.didBecomeActiveNotification
+        let backgroundName = NSApplication.didResignActiveNotification
+        #endif
+        appStateObservers.append(center.addObserver(forName: foregroundName, object: nil, queue: .main) { [weak self] _ in
+            Task { @MainActor [weak self] in await self?.setAppForeground(true) }
+        })
+        appStateObservers.append(center.addObserver(forName: backgroundName, object: nil, queue: .main) { [weak self] _ in
+            Task { @MainActor [weak self] in await self?.setAppForeground(false) }
+        })
+    }
+
+    func stopPlatformSignalBridge() {
+        pathMonitor?.cancel()
+        pathMonitor = nil
+        appStateObservers.forEach(NotificationCenter.default.removeObserver)
+        appStateObservers.removeAll()
+    }
+
+    private func notifyNetworkChange(available: Bool, kind: NetworkInterfaceKind, expensive: Bool) async {
+        guard let client else { return }
+        let response = try? await client.connection.notifyNetworkChange(NetworkChangeRequest(
+            available: available,
+            interface: kind,
+            expensive: expensive,
+            metered: nil,
+            reason: "nw_path_monitor"
+        ))
+        appendEvent("connection", name: "network_change", detail: "\(kind.rawValue) available=\(available) reconnected=\(response?.reconnected ?? false)")
+    }
+
+    private func setAppForeground(_ foreground: Bool) async {
+        guard let client else { return }
+        _ = try? await client.setHeartbeatAppState(SetHeartbeatAppStateRequest(
+            appState: foreground ? .foreground : .background
+        ))
     }
 
     func logout() async throws {
         guard let client else { throw AppStoreError(message: "SDK client is not initialized") }
+        stopPlatformSignalBridge()
         try await client.logout()
         isLoggedIn = false
         currentUserId = nil
         nativeEventSubscription = nil
+        lastLoginDraft = nil
+        lastDataURL = nil
         connectionState = try await client.connection.getConnectionState()
     }
 
     func dispose() async throws {
+        stopPlatformSignalBridge()
         eventSubscriptions.forEach { $0.unsubscribe() }
         eventSubscriptions.removeAll()
         try await client?.dispose()
@@ -87,6 +257,8 @@ final class AppSession: ObservableObject {
         isLoggedIn = false
         currentUserId = nil
         nativeEventSubscription = nil
+        lastLoginDraft = nil
+        lastDataURL = nil
         connectionState = .disconnected
     }
 

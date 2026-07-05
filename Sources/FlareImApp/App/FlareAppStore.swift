@@ -70,6 +70,7 @@ final class FlareAppStore: ObservableObject, AppLifecycle {
             try await session.start(draft: environment.loginDraft, dataURL: dataURL()) { stage in
                 environment.setRuntimeStatus(.loading(stage))
             }
+            SavedSessionStore.save(draft: environment.loginDraft)
             environment.section = .conversations
             environment.setRuntimeStatus(.ready)
             await sdkLabViewModel.refreshDiagnostics()
@@ -79,8 +80,39 @@ final class FlareAppStore: ObservableObject, AppLifecycle {
         }
     }
 
+    /// 热启动：本地会话档案存在时 prepare 本地出图（不等网络），后台建连+同步。
+    /// 成功返回 true，UI 直接进入会话工作台。
+    @discardableResult
+    func resumeSavedSession() async -> Bool {
+        guard !isLoggedIn, let draft = SavedSessionStore.load() else { return isLoggedIn }
+        environment.loginDraft = draft
+        do {
+            try await session.resumeLocal(draft: draft, dataURL: dataURL()) { stage in
+                environment.setRuntimeStatus(.loading(stage))
+            }
+            environment.section = .conversations
+            environment.setRuntimeStatus(.ready)
+            await messagingViewModel.bootstrapHome()
+            appendLab("session_resume", status: "ok", detail: "Resumed \(draft.userId) from local data")
+            Task { [weak self] in
+                guard let self else { return }
+                await self.session.connectInBackground()
+                await self.sdkLabViewModel.refreshDiagnostics()
+                await self.sdkLabViewModel.refreshBuilderCatalog()
+                await self.messagingViewModel.bootstrapHome()
+            }
+            return true
+        } catch {
+            SavedSessionStore.clear()
+            environment.setRuntimeStatus(.idle)
+            appendLab("session_resume", status: "error", detail: String(describing: error))
+            return false
+        }
+    }
+
     func logout() async {
         await perform("logout") {
+            SavedSessionStore.clear()
             try await session.logout()
             clearLocalData()
         }
@@ -88,6 +120,7 @@ final class FlareAppStore: ObservableObject, AppLifecycle {
 
     func dispose() async {
         await perform("dispose") {
+            SavedSessionStore.clear()
             try await session.dispose()
             clearLocalData()
         }

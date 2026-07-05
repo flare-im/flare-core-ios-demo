@@ -21,6 +21,7 @@ struct ChatView: View {
 
     private static let timelineBottomAnchorId = "flare.timeline.bottom"
     private static let timelineTimeGapSeconds: TimeInterval = 5 * 60
+    private static let foregroundSyncIntervalNs: UInt64 = 12_000_000_000
 
     var body: some View {
         GeometryReader { geometry in
@@ -65,6 +66,7 @@ struct ChatView: View {
         }
         .task {
             await messaging.openConversation(conversation.conversationId)
+            await runForegroundSyncLoop(for: conversation.conversationId)
         }
         .onChange(of: conversation.conversationId) { _ in
             timelineFollowsTail = true
@@ -272,6 +274,18 @@ struct ChatView: View {
                 guard timelineFollowsTail, loadOlderAnchorId == nil else { return }
                 scrollToTimelineBottom(proxy)
             }
+        }
+    }
+
+    private func runForegroundSyncLoop(for conversationId: String) async {
+        while !Task.isCancelled {
+            do {
+                try await Task.sleep(nanoseconds: Self.foregroundSyncIntervalNs)
+            } catch {
+                return
+            }
+            guard !Task.isCancelled, conversation.conversationId == conversationId else { return }
+            await messaging.syncSelectedConversation(showBusy: false)
         }
     }
 

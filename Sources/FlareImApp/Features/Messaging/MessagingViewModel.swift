@@ -69,6 +69,18 @@ final class MessagingViewModel: ObservableObject {
     }
     private func unavailable(_ message: String) -> AppStoreError { AppStoreError(message: message) }
 
+    private func requireConnectedClient(
+        _ message: String,
+        showProgress: Bool = true
+    ) async throws -> any FlareImClientProtocol {
+        guard session.client != nil || session.isLoggedIn else { throw unavailable(message) }
+        return try await session.ensureConnected { stage in
+            if showProgress {
+                environment.setRuntimeStatus(.loading(stage))
+            }
+        }
+    }
+
     private func retryingDatabaseLock<T>(
         operation: String,
         attempts: Int = 3,
@@ -111,14 +123,12 @@ final class MessagingViewModel: ObservableObject {
                 try await repository.openTimeline(client: client, conversationId: conversationId, reason: "send")
             }
             let messages = messagesByConversation[conversationId, default: []]
-            if let readSeq = maxPositiveSeq(in: messages) {
-                try await retryingDatabaseLock(operation: "conversation.mark_read_after_send") {
-                    try await client.conversations.markConversationRead([
-                        "conversationId": AnySendable(conversationId),
-                        "readSeq": AnySendable(readSeq)
-                    ])
-                }
-            }
+            await markConversationReadBestEffort(
+                client: client,
+                conversationId: conversationId,
+                messages: messages,
+                operation: "conversation.mark_read_after_send"
+            )
         } catch {
             appendLab("view.timeline.refresh_after_send", status: "warn", detail: FlareFormatters.errorText(error))
         }
@@ -145,31 +155,41 @@ final class MessagingViewModel: ObservableObject {
 
     /// 打开会话列表视图(经 repository)+ 初始化选择态(选中项缺省取第一条;复刻原 open 行为)。
     private func syncConversationList(reason: String) async throws {
-        guard let client else { throw unavailable("Login before loading conversations") }
+        let client = try await requireConnectedClient("Login before loading conversations")
         try await repository.openConversationList(client: client, reason: reason)
         selectedConversationId = selectedConversationId ?? repository.conversations.first?.conversationId
     }
 
-    func openConversation(_ conversationId: String) async {
-        await perform("view.timeline.open") {
-            guard let client else { throw unavailable("Login before opening a conversation") }
+    func openConversation(_ conversationId: String, showBusy: Bool = true) async {
+        await perform("view.timeline.open", showBusy: showBusy) {
+            let client = try await requireConnectedClient(
+                "Login before opening a conversation",
+                showProgress: showBusy
+            )
             selectedConversationId = conversationId
             environment.section = .conversations
-            try await repository.openTimeline(client: client, conversationId: conversationId, reason: "open")
-            let messages = messagesByConversation[conversationId, default: []]
-            if let readSeq = maxPositiveSeq(in: messages) {
-                try await client.conversations.markConversationRead([
-                    "conversationId": AnySendable(conversationId),
-                    "readSeq": AnySendable(readSeq)
-                ])
+            do {
+                try await repository.openTimeline(client: client, conversationId: conversationId, reason: "open")
+            } catch {
+                appendLab("view.timeline.open", status: "warn", detail: FlareFormatters.errorText(error))
+                if messagesByConversation[conversationId, default: []].isEmpty {
+                    throw error
+                }
             }
+            let messages = messagesByConversation[conversationId, default: []]
+            await markConversationReadBestEffort(
+                client: client,
+                conversationId: conversationId,
+                messages: messages,
+                operation: "conversation.mark_read_on_open"
+            )
         }
     }
 
     func loadOlderMessages() async {
         guard let selectedConversationId else { return }
         await perform("view.timeline.load_older") {
-            guard let client else { throw unavailable("Login before loading messages") }
+            let client = try await requireConnectedClient("Login before loading messages")
             try await repository.loadOlderTimeline(client: client, conversationId: selectedConversationId)
         }
     }
@@ -180,7 +200,7 @@ final class MessagingViewModel: ObservableObject {
         guard let selectedConversationId, !trimmed.isEmpty else { return false }
         var didSend = false
         await perform("message.send_text") {
-            guard let client else { throw unavailable("Login before sending messages") }
+            let client = try await requireConnectedClient("Login before sending messages")
             try await client.messages.setTyping([
                 "conversationId": AnySendable(selectedConversationId),
                 "typing": AnySendable(false)
@@ -211,7 +231,7 @@ final class MessagingViewModel: ObservableObject {
         guard let selectedConversationId else { return false }
         var didSend = false
         await perform("message_builder.\(op.rawValue)") {
-            guard let client else { throw unavailable("Login before building messages") }
+            let client = try await requireConnectedClient("Login before building messages")
             let message = try await MessageBuilder.build(
                 client: client,
                 conversationId: selectedConversationId,
@@ -307,7 +327,7 @@ final class MessagingViewModel: ObservableObject {
     }
 
     func uploadImageAttachmentPayload(_ payload: [String: Any]) async throws -> [String: Any] {
-        guard let client else { throw unavailable("Login before uploading images") }
+        let client = try await requireConnectedClient("Login before uploading images")
         let localPath = try mediaLocalPath(from: payload, fallbackOperation: "media.upload_image")
         let uploaded = try await client.media.uploadImage([
             "absolutePath": AnySendable(localPath)
@@ -322,7 +342,7 @@ final class MessagingViewModel: ObservableObject {
     }
 
     func uploadAudioAttachmentPayload(_ payload: [String: Any]) async throws -> [String: Any] {
-        guard let client else { throw unavailable("Login before uploading audio") }
+        let client = try await requireConnectedClient("Login before uploading audio")
         let localPath = try mediaLocalPath(from: payload, fallbackOperation: "media.upload_audio")
         let uploaded = try await client.media.uploadFile([
             "absolutePath": AnySendable(localPath)
@@ -345,7 +365,7 @@ final class MessagingViewModel: ObservableObject {
         if let cached = try? await client.media.cacheRemoteMedia([
             "fileId": AnySendable(mediaId),
             "expiresIn": AnySendable(3600)
-        ]), let localPath = (cached["localPath"] as? String)?.trimmingCharacters(in: .whitespacesAndNewlines),
+        ]), let localPath = (cached["localPath"]?.value as? String)?.trimmingCharacters(in: .whitespacesAndNewlines),
             !localPath.isEmpty {
             return URL(fileURLWithPath: localPath)
         }
@@ -439,7 +459,7 @@ final class MessagingViewModel: ObservableObject {
 
     func retry(_ message: AppMessage) async {
         await perform("message.retry") {
-            guard let client else { throw unavailable("Login before retrying messages") }
+            let client = try await requireConnectedClient("Login before retrying messages")
             failedMessageKeys.remove(message.appStableId)
             pendingMessageKeys.insert(message.appStableId)
             do {
@@ -456,7 +476,7 @@ final class MessagingViewModel: ObservableObject {
 
     func messageAction(_ action: String, message: AppMessage, reaction: String = "like") async {
         await perform("message.\(action)") {
-            guard let client else { throw unavailable("Login before message actions") }
+            let client = try await requireConnectedClient("Login before message actions")
             let request = messageMutationRequest(message)
             switch action {
             case "recall":
@@ -497,7 +517,7 @@ final class MessagingViewModel: ObservableObject {
     func setTyping(_ typing: Bool) async {
         guard let selectedConversationId else { return }
         await perform("message.typing") {
-            guard let client else { throw unavailable("Login before typing events") }
+            let client = try await requireConnectedClient("Login before typing events")
             try await client.messages.setTyping([
                 "conversationId": AnySendable(selectedConversationId),
                 "typing": AnySendable(typing)
@@ -512,14 +532,18 @@ final class MessagingViewModel: ObservableObject {
         guard !peer.isEmpty else { return nil }
         var opened: AppConversation?
         await perform("conversation.get_one") {
-            guard let client else { throw unavailable("Login before starting chat") }
+            let client = try await requireConnectedClient("Login before starting chat")
             let conversation = try await client.conversations.getOneConversation([
                 "sourceId": AnySendable(peer),
                 "conversationType": AnySendable(ConversationType.single.rawValue)
             ])
             opened = SdkModelMapper.conversationFromCore(conversation)
             await openConversation(conversation.conversationId)
-            try await syncConversationList(reason: "open_peer")
+            do {
+                try await syncConversationList(reason: "open_peer")
+            } catch {
+                appendLab("view.conversation_list.open", status: "warn", detail: FlareFormatters.errorText(error))
+            }
         }
         return opened
     }
@@ -533,20 +557,24 @@ final class MessagingViewModel: ObservableObject {
         guard !ids.isEmpty else { return nil }
         var opened: AppConversation?
         await perform("conversation.get_group_by_user_ids") {
-            guard let client else { throw unavailable("Login before starting group chat") }
+            let client = try await requireConnectedClient("Login before starting group chat")
             let conversation = try await client.conversations.getGroupConversationByUserIds([
                 "userIds": AnySendable(ids)
             ])
             opened = SdkModelMapper.conversationFromCore(conversation)
             await openConversation(conversation.conversationId)
-            try await syncConversationList(reason: "open_group")
+            do {
+                try await syncConversationList(reason: "open_group")
+            } catch {
+                appendLab("view.conversation_list.open", status: "warn", detail: FlareFormatters.errorText(error))
+            }
         }
         return opened
     }
 
     func conversationAction(_ action: String, conversation: AppConversation) async {
         await perform("conversation.\(action)") {
-            guard let client else { throw unavailable("Login before conversation actions") }
+            let client = try await requireConnectedClient("Login before conversation actions")
             let request: [String: AnySendable] = [
                 "conversationId": AnySendable(conversation.conversationId)
             ]
@@ -575,7 +603,7 @@ final class MessagingViewModel: ObservableObject {
     func saveDraft(_ text: String) async {
         guard let selectedConversationId else { return }
         await perform("conversation.draft") {
-            guard let client else { throw unavailable("Login before saving drafts") }
+            let client = try await requireConnectedClient("Login before saving drafts")
             try await client.conversations.updateConversationDraft(UpdateConversationDraftRequest(
                 conversationId: selectedConversationId,
                 draft: text
@@ -584,29 +612,53 @@ final class MessagingViewModel: ObservableObject {
         }
     }
 
-    func syncSelectedConversation() async {
+    func syncSelectedConversation(showBusy: Bool = true) async {
         guard let selectedConversationId else { return }
-        await perform("sync.conversation") {
-            guard let client else { throw unavailable("Login before sync") }
-            try await client.sync.syncConversation(["conversationId": AnySendable(selectedConversationId)])
-            try await client.sync.syncMessages([
-                "conversationId": AnySendable(selectedConversationId),
-                "lastSeq": AnySendable(selectedMessages.last?.seq ?? 0),
-                "limit": AnySendable(100)
-            ])
-            if let readSeq = maxPositiveSeq(in: selectedMessages) {
-                try await client.conversations.markConversationRead([
+        await perform("sync.conversation", showBusy: showBusy) {
+            let client = try await requireConnectedClient("Login before sync", showProgress: showBusy)
+            do {
+                try await client.sync.syncConversation(["conversationId": AnySendable(selectedConversationId)])
+                try await client.sync.syncMessages([
                     "conversationId": AnySendable(selectedConversationId),
-                    "readSeq": AnySendable(readSeq)
+                    "lastSeq": AnySendable(selectedMessages.last?.seq ?? 0),
+                    "limit": AnySendable(100)
                 ])
+            } catch {
+                appendLab("sync.conversation", status: "warn", detail: FlareFormatters.errorText(error))
+                if showBusy { throw error }
             }
-            await openConversation(selectedConversationId)
+            await markConversationReadBestEffort(
+                client: client,
+                conversationId: selectedConversationId,
+                messages: selectedMessages,
+                operation: "conversation.mark_read_after_sync"
+            )
+            await openConversation(selectedConversationId, showBusy: false)
         }
     }
 
     private func maxPositiveSeq(in messages: [AppMessage]) -> UInt64? {
         let seq = messages.map(\.seq).max() ?? 0
         return seq > 0 ? seq : nil
+    }
+
+    private func markConversationReadBestEffort(
+        client: any FlareImClientProtocol,
+        conversationId: String,
+        messages: [AppMessage],
+        operation: String
+    ) async {
+        guard let readSeq = maxPositiveSeq(in: messages) else { return }
+        do {
+            try await retryingDatabaseLock(operation: operation) {
+                try await client.conversations.markConversationRead([
+                    "conversationId": AnySendable(conversationId),
+                    "readSeq": AnySendable(readSeq)
+                ])
+            }
+        } catch {
+            appendLab(operation, status: "warn", detail: FlareFormatters.errorText(error))
+        }
     }
 
     private func matchesCurrentFilter(_ conversation: AppConversation) -> Bool {

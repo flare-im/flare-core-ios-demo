@@ -764,6 +764,8 @@ private struct StartConversationSheet: View {
     @EnvironmentObject private var messaging: MessagingViewModel
     var onConversationOpened: ((AppConversation) -> Void)?
     @State private var kind: StartConversationKind = .single
+    @State private var peerUserId = ""
+    @State private var groupUserIds = ""
     @State private var isOpening = false
     @State private var localError: String?
 
@@ -790,11 +792,13 @@ private struct StartConversationSheet: View {
                     Text(kind == .single ? "Peer ID" : "Member IDs")
                         .font(.caption.weight(.bold))
                         .foregroundStyle(FlareDesign.brand)
-                    TextField(
-                        kind == .single ? "Enter the peer's real userId" : "Enter member userIds separated by commas",
-                        text: kind == .single ? $messaging.startConversationDraft.peerUserId : $messaging.startConversationDraft.groupUserIds
-                    )
-                    .textFieldStyle(.roundedBorder)
+                    if kind == .single {
+                        TextField("Enter the peer's real userId", text: $peerUserId)
+                            .textFieldStyle(.roundedBorder)
+                    } else {
+                        TextField("Enter member userIds separated by commas", text: $groupUserIds)
+                            .textFieldStyle(.roundedBorder)
+                    }
                     Text(kind == .single ? "The conversation ID is generated automatically by the SDK via getOneConversation" : "The group conversation is generated automatically by the SDK via getGroupConversationByUserIds")
                         .font(.caption)
                         .foregroundStyle(FlareDesign.textTertiary)
@@ -861,14 +865,18 @@ private struct StartConversationSheet: View {
             .background(FlareDesign.surfaceAlt.opacity(0.55))
         }
         .background(FlareDesign.surface)
+        .onAppear {
+            peerUserId = messaging.startConversationDraft.peerUserId
+            groupUserIds = messaging.startConversationDraft.groupUserIds
+        }
     }
 
     private var trimmedPeer: String {
-        messaging.startConversationDraft.peerUserId.trimmingCharacters(in: .whitespacesAndNewlines)
+        peerUserId.trimmingCharacters(in: .whitespacesAndNewlines)
     }
 
     private var groupIds: [String] {
-        messaging.startConversationDraft.groupUserIds
+        groupUserIds
             .split(separator: ",")
             .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
             .filter { !$0.isEmpty }
@@ -903,6 +911,8 @@ private struct StartConversationSheet: View {
     private func openConversation() {
         localError = nil
         isOpening = true
+        messaging.startConversationDraft.peerUserId = trimmedPeer
+        messaging.startConversationDraft.groupUserIds = groupIds.joined(separator: ",")
         Task {
             let conversation: AppConversation?
             switch kind {

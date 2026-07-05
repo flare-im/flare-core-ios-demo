@@ -83,6 +83,7 @@ final class ViewDataRepository: ObservableObject {
             _ = try? await client.views.close(CloseViewRequest(viewId: oldViewId))
         }
         activeTimelineConversationId = conversationId
+        await prefetchTimelineMessages(client: client, conversationId: conversationId, reason: reason)
         let response = try await client.views.openTimeline(OpenTimelineViewRequest(
             conversationId: conversationId,
             messageLimit: 50
@@ -90,6 +91,21 @@ final class ViewDataRepository: ObservableObject {
         timelineViewId = response.viewId
         try applyTimelineSnapshot(response.snapshot, viewId: response.viewId)
         onLog?("view.timeline.open", "\(reason): \(messagesByConversation[conversationId, default: []].count) messages")
+    }
+
+    private func prefetchTimelineMessages(client: any FlareImClientProtocol, conversationId: String, reason: String) async {
+        let localLastSeq = messagesByConversation[conversationId, default: []].map(\.seq).max() ?? 0
+        do {
+            try await client.sync.syncConversation(["conversationId": AnySendable(conversationId)])
+            try await client.sync.syncMessages([
+                "conversationId": AnySendable(conversationId),
+                "lastSeq": AnySendable(localLastSeq),
+                "limit": AnySendable(50)
+            ])
+            onLog?("sync.timeline.prefetch", "\(reason): localLastSeq=\(localLastSeq)")
+        } catch {
+            onLog?("sync.timeline.prefetch", "\(reason): warn \(String(describing: error))")
+        }
     }
 
     /// 经观察时间线视图向上翻历史:core 扩窗并回 snapshot/delta,client 仅应用(不自取+合并+重排)。

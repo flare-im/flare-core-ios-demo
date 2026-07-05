@@ -147,6 +147,14 @@ final class SdkLabViewModel: ObservableObject {
             case "sync.summaries":
                 try await client.sync.syncConversationSummaries()
                 await refreshConversations()
+            case "user.upsert_profiles":
+                let uid = currentUserId ?? "self"
+                try await client.user.upsertUserProfiles([
+                    "profiles": AnySendable([
+                        ["userId": uid, "nickname": "SDK Lab 昵称", "avatarUrl": ""]
+                    ])
+                ])
+                appendLab(operation, status: "ok", detail: "upserted \(uid)")
             case "message.get_raw":
                 guard let message = selectedMessages.last else { throw unavailable("Select a conversation with messages first") }
                 let raw = try await client.messages.getRawMessage(messageMutationRequest(message))

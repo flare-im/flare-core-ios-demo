@@ -50,7 +50,7 @@ enum RuntimeStatus: Equatable {
 
     var isBlocking: Bool {
         switch self {
-        case .error, .unavailable: return true
+        case .unavailable: return true
         default: return false
         }
     }

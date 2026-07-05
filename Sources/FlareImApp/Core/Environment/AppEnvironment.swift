@@ -36,22 +36,29 @@ final class AppEnvironment: ObservableObject {
     /// 登录等多阶段操作回报进度用。
     func setRuntimeStatus(_ status: RuntimeStatus) {
         runtimeStatus = status
+        if status == .ready || status == .idle {
+            lastError = nil
+        }
     }
 
     /// 统一操作执行:置忙 → 跑 → 成功收敛运行态 / 失败记错误 + Lab。原 god-store `perform` 的归宿。
     func run(_ operation: String, showBusy: Bool = true, body: () async throws -> Void) async {
         if showBusy { isBusy = true }
-        lastError = nil
+        if showBusy { lastError = nil }
         do {
             try await body()
-            if showBusy, !runtimeStatus.isBlocking {
-                runtimeStatus = session.isLoggedIn ? .ready : .idle
+            if showBusy {
+                setRuntimeStatus(session.isLoggedIn ? .ready : .idle)
             }
         } catch {
             let text = FlareFormatters.errorText(error)
-            lastError = text
-            runtimeStatus = (error is AppStoreError) ? .unavailable(text) : .error(text)
-            appendLab(operation, status: "error", detail: text)
+            if showBusy {
+                lastError = text
+                runtimeStatus = (error is AppStoreError) ? .unavailable(text) : .error(text)
+                appendLab(operation, status: "error", detail: text)
+            } else {
+                appendLab(operation, status: "warn", detail: text)
+            }
         }
         if showBusy { isBusy = false }
     }

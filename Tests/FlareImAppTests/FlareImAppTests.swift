@@ -25,6 +25,25 @@ final class FlareImAppTests: XCTestCase {
         XCTAssertEqual(RuntimeStatus.offline("network unavailable").productTone, .warning)
         XCTAssertEqual(RuntimeStatus.error("token expired").productTone, .danger)
         XCTAssertEqual(RuntimeStatus.unavailable("native runtime missing").productTone, .warning)
+
+        XCTAssertFalse(RuntimeStatus.error("ack send timeout").isBlocking)
+        XCTAssertTrue(RuntimeStatus.unavailable("native runtime missing").isBlocking)
+    }
+
+    @MainActor
+    func testSilentEnvironmentOperationDoesNotBlockComposerState() async {
+        let session = AppSession()
+        let environment = AppEnvironment(session: session)
+        environment.setRuntimeStatus(.ready)
+
+        await environment.run("sync.foreground_poll", showBusy: false) {
+            throw AppStoreError(message: "sync timeout")
+        }
+
+        XCTAssertEqual(environment.runtimeStatus, .ready)
+        XCTAssertNil(environment.lastError)
+        XCTAssertEqual(environment.labResults.first?.operation, "sync.foreground_poll")
+        XCTAssertEqual(environment.labResults.first?.status, "warn")
     }
 
     func testLoginNativeErrorUsesProductMessage() {
