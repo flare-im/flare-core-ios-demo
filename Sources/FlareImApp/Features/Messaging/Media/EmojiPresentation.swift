@@ -1,4 +1,5 @@
 import Foundation
+import FlareIMUI
 import SwiftUI
 
 enum EmojiPresentation {
@@ -126,31 +127,15 @@ enum EmojiPresentation {
         }
     }
 
+    // Emoji/sticker assets now come from the flare-im-design kit's bundled central
+    // source (FlareIMUI). The app keeps its richer animated FlareAssetImageView
+    // rendering but no longer carries a local resource copy.
     static func emojiURL(for key: String) -> URL? {
-        resourceURL(name: key, subdirectory: "emoji")
+        FlareEmojiStickerCatalog.shared.emojiImageURL(key)
     }
 
     static func stickerURL(packageId: String, stickerId: String) -> URL? {
-        resourceURL(name: stickerId, subdirectory: "stickers/\(stickerSubdirectory(for: packageId))")
-    }
-
-    static func stickerSubdirectory(for packageId: String) -> String {
-        packageId == "gifs" ? "default" : packageId
-    }
-
-    private static func resourceURL(name: String, subdirectory: String) -> URL? {
-        guard safeResourceComponent(name), subdirectory.split(separator: "/").allSatisfy({ safeResourceComponent(String($0)) }) else {
-            return nil
-        }
-        return Bundle.module.url(
-            forResource: name,
-            withExtension: "webp",
-            subdirectory: "FlareAssets/\(subdirectory)"
-        )
-    }
-
-    private static func safeResourceComponent(_ value: String) -> Bool {
-        value.range(of: #"^[A-Za-z0-9_-]+$"#, options: .regularExpression) != nil
+        FlareEmojiStickerCatalog.shared.stickerImageURL(stickerId: stickerId, packageId: packageId)
     }
 }
 

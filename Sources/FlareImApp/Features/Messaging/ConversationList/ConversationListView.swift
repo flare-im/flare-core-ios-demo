@@ -1,4 +1,5 @@
 import FlareCoreAppleSDK
+import FlareIMUI
 import SwiftUI
 
 struct ConversationListView: View {
@@ -84,8 +85,7 @@ struct ConversationListView: View {
     private var header: some View {
         VStack(alignment: .leading, spacing: FlareDesign.Spacing.lg) {
             HStack(alignment: .center, spacing: FlareDesign.Spacing.md) {
-                AvatarView(title: currentUserTitle, imageURL: "", tint: .orange)
-                    .frame(width: 54, height: 54)
+                AvatarView(title: currentUserTitle, imageURL: "", size: 54)
                 VStack(alignment: .leading, spacing: FlareDesign.Spacing.xs) {
                     Text(currentUserTitle)
                         .font(.system(size: 26, weight: .bold))
@@ -320,53 +320,10 @@ private struct ConversationCard: View {
     var onActions: () -> Void
 
     var body: some View {
-        HStack(alignment: .top, spacing: FlareDesign.Spacing.md) {
+        HStack(alignment: .center, spacing: FlareDesign.Spacing.md) {
             Button(action: onOpen) {
-                HStack(alignment: .top, spacing: FlareDesign.Spacing.md) {
-                    AvatarView(title: conversation.appTitle, imageURL: conversation.avatarUrl, tint: avatarColor)
-                        .frame(width: 50, height: 50)
-                        .overlay(alignment: .bottomTrailing) {
-                            if conversation.isPinned {
-                                Image(systemName: "pin.fill")
-                                    .font(.system(size: 9, weight: .bold))
-                                    .foregroundStyle(.white)
-                                    .frame(width: 18, height: 18)
-                                    .background(FlareDesign.brand)
-                                    .clipShape(Circle())
-                                    .overlay(Circle().stroke(FlareDesign.surface, lineWidth: 2))
-                                    .offset(x: 2, y: 2)
-                            }
-                        }
-
-                    VStack(alignment: .leading, spacing: FlareDesign.Spacing.xs) {
-                        HStack(alignment: .firstTextBaseline, spacing: FlareDesign.Spacing.sm) {
-                            Text(conversation.appTitle)
-                                .font(.system(size: 20, weight: conversation.unreadCount > 0 ? .bold : .semibold))
-                                .foregroundStyle(FlareDesign.textPrimary)
-                                .lineLimit(1)
-
-                            tagStrip
-                        }
-                        previewLine
-                    }
-
-                    Spacer(minLength: 8)
-
-                    VStack(alignment: .trailing, spacing: FlareDesign.Spacing.sm) {
-                        Text(displayDate)
-                            .font(.subheadline.weight(.medium))
-                            .foregroundStyle(FlareDesign.textSecondary)
-                        if conversation.unreadCount > 0 {
-                            Text("\(conversation.unreadCount)")
-                                .font(.caption.weight(.bold))
-                                .foregroundStyle(.white)
-                                .frame(minWidth: 24, minHeight: 24)
-                                    .background(FlareDesign.brand)
-                                    .clipShape(Circle())
-                        }
-                    }
-                }
-                .contentShape(Rectangle())
+                FlareIMUI.ConversationRowView(item: rowData, avatarSize: 50)
+                    .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
 
@@ -383,9 +340,9 @@ private struct ConversationCard: View {
             .accessibilityLabel("Conversation actions")
         }
         .padding(.horizontal, FlareDesign.Spacing.lg)
-        .padding(.vertical, FlareDesign.Spacing.md)
+        .padding(.vertical, FlareDesign.Spacing.xs)
         .frame(maxWidth: .infinity, minHeight: 78)
-        .background(rowBackground)
+        .background(conversation.isPinned ? FlareDesign.brandSoft.opacity(0.16) : FlareDesign.surface)
         .overlay(alignment: .leading) {
             if conversation.isPinned {
                 Rectangle()
@@ -395,66 +352,42 @@ private struct ConversationCard: View {
         }
     }
 
+    // Maps the app conversation into the kit's presentational row model. The kit
+    // renders avatar/pin/title/tags/preview/time/unread; the app keeps only the
+    // ellipsis-actions affordance and the pinned row background around it.
+    private var rowData: FlareIMUI.ConversationRowData {
+        FlareIMUI.ConversationRowData(
+            id: conversation.id,
+            title: conversation.appTitle,
+            avatarURL: conversation.avatarUrl,
+            preview: previewText,
+            timestampLabel: displayDate,
+            unreadCount: Int(conversation.unreadCount),
+            pinned: conversation.isPinned,
+            muted: conversation.isMuted,
+            mentioned: conversation.mentionMe || conversation.mentionCount > 0,
+            draftPreview: isDraft ? conversation.draft : nil,
+            tags: rowTags
+        )
+    }
+
+    private var rowTags: [FlareIMUI.ConversationRowTag] {
+        var tags: [FlareIMUI.ConversationRowTag] = []
+        if conversation.conversationType == .group {
+            tags.append(FlareIMUI.ConversationRowTag(text: "Group", tone: .info))
+        }
+        if let roleTag {
+            tags.append(FlareIMUI.ConversationRowTag(text: roleTag, tone: .warning))
+        }
+        return tags
+    }
+
     private var previewText: String {
         conversation.appPreview.isEmpty ? String(localized: "No messages") : conversation.appPreview
     }
 
-    @ViewBuilder
-    private var previewLine: some View {
-        HStack(spacing: FlareDesign.Spacing.xs) {
-            if isDraft {
-                Text("Draft")
-                    .font(.subheadline.weight(.semibold))
-                    .foregroundStyle(FlareDesign.danger)
-            }
-
-            if let key = EmojiPresentation.lonePackKey(in: previewText) {
-                FlareAssetImageView(
-                    url: EmojiPresentation.emojiURL(for: key),
-                    fallbackSystemImage: "face.smiling",
-                    accessibilityLabel: key,
-                    size: 22,
-                    travel: 0,
-                    rotation: 0,
-                    isAnimated: false
-                )
-                    .frame(width: 30, height: 24, alignment: .leading)
-            } else {
-                Text(previewBody)
-                    .font(.subheadline)
-                    .foregroundStyle(isDraft ? FlareDesign.textPrimary : FlareDesign.textSecondary)
-                    .lineLimit(1)
-            }
-        }
-    }
-
-    @ViewBuilder
-    private var tagStrip: some View {
-        HStack(spacing: FlareDesign.Spacing.xs) {
-            if conversation.conversationType == .group {
-                ConversationTag(text: "Group", tone: .info)
-            }
-            if let roleTag {
-                ConversationTag(text: roleTag, tone: .warning)
-            }
-            if conversation.mentionMe || conversation.mentionCount > 0 {
-                ConversationTag(text: "@", tone: .warning)
-            }
-            if conversation.isMuted {
-                Image(systemName: "bell.slash")
-                    .font(.caption.weight(.semibold))
-                    .foregroundStyle(FlareDesign.textTertiary)
-            }
-        }
-    }
-
     private var isDraft: Bool {
         conversation.draft?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty == false
-    }
-
-    private var previewBody: String {
-        guard isDraft else { return previewText }
-        return previewText.replacingOccurrences(of: "Draft: ", with: "")
     }
 
     private var roleTag: String? {
@@ -486,32 +419,6 @@ private struct ConversationCard: View {
         }
         return formatter.string(from: date)
     }
-
-    private var avatarColor: Color {
-        let colors: [Color] = [.green, .orange, .blue, .purple, .indigo, .teal]
-        let index = abs(conversation.appTitle.hashValue) % colors.count
-        return colors[index]
-    }
-
-    private var rowBackground: Color {
-        conversation.isPinned ? FlareDesign.brandSoft.opacity(0.16) : FlareDesign.surface
-    }
-}
-
-private struct ConversationTag: View {
-    let text: String
-    var tone: RuntimeTone
-
-    var body: some View {
-        Text(text)
-            .font(.caption2.weight(.semibold))
-            .foregroundStyle(FlareDesign.color(for: tone))
-            .lineLimit(1)
-            .padding(.horizontal, FlareDesign.Spacing.xs)
-            .frame(height: 18)
-            .background(FlareDesign.color(for: tone).opacity(0.12))
-            .clipShape(RoundedRectangle(cornerRadius: FlareDesign.Radius.small, style: .continuous))
-    }
 }
 
 private struct ConversationActionSheet: View {
@@ -541,8 +448,7 @@ private struct ConversationActionSheet: View {
 
     private var header: some View {
         HStack(spacing: FlareDesign.Spacing.md) {
-            AvatarView(title: conversation.appTitle, imageURL: conversation.avatarUrl, tint: .orange)
-                .frame(width: 42, height: 42)
+            AvatarView(title: conversation.appTitle, imageURL: conversation.avatarUrl, size: 42)
             VStack(alignment: .leading, spacing: FlareDesign.Spacing.xs) {
                 HStack(spacing: FlareDesign.Spacing.sm) {
                     Text(conversation.appTitle)
@@ -704,28 +610,23 @@ private struct ConversationActionRow: View {
     }
 }
 
+/// App avatar → delegates to `FlareIMUI.AvatarView` (kit richer: renders the
+/// remote image via AsyncImage with an initials fallback + identity-seeded pastel
+/// tint, which the bespoke solid-fill version never did). App keeps its own
+/// call-site signature (`title` / `imageURL` / `size`) and maps into the kit.
 struct AvatarView: View {
     let title: String
     let imageURL: String
-    var tint: Color = FlareDesign.brand
+    var size: CGFloat = 40
 
     var body: some View {
-        ZStack {
-            Circle()
-                .fill(tint)
-            Text(initials)
-                .font(.headline.weight(.heavy))
-                .foregroundStyle(.white)
-        }
+        FlareIMUI.AvatarView(
+            userId: title,
+            displayName: title,
+            avatarURL: imageURL.isEmpty ? nil : imageURL,
+            size: size
+        )
         .accessibilityLabel(title)
-    }
-
-    private var initials: String {
-        let trimmed = title.trimmingCharacters(in: .whitespacesAndNewlines)
-        if let first = trimmed.first {
-            return String(first).uppercased()
-        }
-        return "#"
     }
 }
 
@@ -994,8 +895,7 @@ private struct MoreActionsSheet: View {
                 .padding(.bottom, FlareDesign.Spacing.lg)
 
             HStack(spacing: FlareDesign.Spacing.md) {
-                AvatarView(title: messaging.currentUserId ?? "F", imageURL: "", tint: FlareDesign.brand)
-                    .frame(width: 44, height: 44)
+                AvatarView(title: messaging.currentUserId ?? "F", imageURL: "", size: 44)
                 VStack(alignment: .leading, spacing: FlareDesign.Spacing.xxs) {
                     Text("Current account")
                         .font(.caption)
@@ -1074,8 +974,7 @@ struct ConversationDetailsPanel: View {
         ScrollView {
             VStack(alignment: .leading, spacing: FlareDesign.Spacing.xl) {
                 HStack(alignment: .top, spacing: FlareDesign.Spacing.md) {
-                    AvatarView(title: conversation.appTitle, imageURL: conversation.avatarUrl)
-                        .frame(width: 44, height: 44)
+                    AvatarView(title: conversation.appTitle, imageURL: conversation.avatarUrl, size: 44)
                     VStack(alignment: .leading, spacing: FlareDesign.Spacing.xs) {
                         Text(conversation.appTitle)
                             .font(.title3.weight(.bold))

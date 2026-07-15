@@ -11,15 +11,16 @@ let package = Package(
     ],
     dependencies: [
         .package(path: "../../packages/flare-core-apple-sdk"),
+        .package(path: "../../../flare-im-design/ios-im-ui"),
     ],
     targets: [
         .target(
             name: "FlareImApp",
             dependencies: [
                 .product(name: "FlareCoreAppleSDK", package: "flare-core-apple-sdk"),
+                .product(name: "FlareIMUI", package: "ios-im-ui"),
             ],
-            path: "Sources/FlareImApp",
-            resources: [.copy("Resources/FlareAssets")]
+            path: "Sources/FlareImApp"
         ),
         .executableTarget(
             name: "FlareImAppRunner",

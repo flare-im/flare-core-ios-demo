@@ -1,4 +1,5 @@
 import FlareCoreAppleSDK
+import FlareIMUI
 import Foundation
 import XCTest
 @testable import FlareImApp
@@ -691,12 +692,13 @@ final class FlareImAppTests: XCTestCase {
         }
     }
 
-    func testEmojiPresentationResolvesCopiedWebpAssets() {
+    func testEmojiPresentationResolvesKitBundledAssets() {
+        // Assets now resolve from the flare-im-design kit's bundled central source.
         XCTAssertNotNil(EmojiPresentation.emojiURL(for: "smirking_face"))
         XCTAssertNotNil(EmojiPresentation.stickerURL(packageId: "classic", stickerId: "001"))
         XCTAssertNotNil(EmojiPresentation.stickerURL(packageId: "gifs", stickerId: "001"))
 
-        XCTAssertEqual(EmojiPresentation.stickerSubdirectory(for: "gifs"), "default")
+        XCTAssertEqual(FlareEmojiStickerCatalog.stickerSubdir(forPackageId: "gifs"), "default")
         XCTAssertNil(EmojiPresentation.emojiURL(for: "missing_pack_key"))
         XCTAssertNil(EmojiPresentation.stickerURL(packageId: "classic", stickerId: "../001"))
     }

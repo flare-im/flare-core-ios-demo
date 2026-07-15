@@ -1,4 +1,5 @@
 import FlareCoreAppleSDK
+import FlareIMUI
 import AVFoundation
 import AVKit
 import SwiftUI
@@ -20,9 +21,7 @@ struct MessageBubble: View {
             return content.stringValue("emoji", "key")
                 .flatMap(EmojiPresentation.singleEmoji) != nil
         case .text:
-            guard let rawText = content.stringValue("text", "plainText") else { return false }
-            return EmojiPresentation.lonePackKey(in: rawText) != nil ||
-                EmojiPresentation.singleEmoji(in: rawText) != nil
+            return true
         case .sticker:
             return stickerAssetURL(content: content) != nil
         default:
@@ -52,8 +51,19 @@ struct MessageBubble: View {
         }
     }
 
+    private var hasStandaloneKitCard: Bool {
+        guard !message.isRecalled, message.quotePreview?.isEmpty != false else { return false }
+        guard let content = message.content else { return false }
+        switch content.contentType {
+        case .location, .card, .linkCard, .system, .notification, .announcement, .vote, .task:
+            return true
+        default:
+            return false
+        }
+    }
+
     private var isBareVisualContent: Bool {
-        hasStandaloneVisualContent || (hasVisualMediaContent && !hasMediaCaption) || isBareAudioContent
+        hasStandaloneVisualContent || hasStandaloneKitCard || (hasVisualMediaContent && !hasMediaCaption) || isBareAudioContent
     }
 
     private var isCompactImageBubble: Bool {
@@ -153,7 +163,7 @@ struct MessageBubble: View {
         } else if let content = message.content {
             switch content.contentType {
             case .text:
-                EmojiAwareTextMessageView(content: content)
+                EmojiAwareTextMessageView(content: content, outgoing: outgoing)
             case .richText:
                 RichTextMessageView(content: content, outgoing: outgoing)
             case .emoji:
@@ -173,16 +183,22 @@ struct MessageBubble: View {
             case .file:
                 FileMessageView(content: content, outgoing: outgoing)
             case .location:
-                RichCardMessageView(title: String(localized: "Location"), detail: content.previewText, symbol: "mappin.and.ellipse", outgoing: outgoing)
-            case .card, .linkCard:
-                RichCardMessageView(title: content.contentType == .linkCard ? String(localized: "Link") : String(localized: "Card"), detail: content.previewText, symbol: content.contentType == .linkCard ? "link" : "rectangle.on.rectangle", outgoing: outgoing)
+                FlareIMUI.LocationMessageView(title: content.stringValue("title", "address") ?? String(localized: "Location"), address: content.stringValue("address") ?? "")
+            case .card:
+                FlareIMUI.ContactMessageView(name: content.stringValue("title", "name") ?? String(localized: "Card"), subtitle: content.stringValue("subtitle", "id"))
+            case .linkCard:
+                FlareIMUI.LinkCardMessageView(title: content.stringValue("title", "url") ?? String(localized: "Link"), domain: content.stringValue("domain") ?? "", description: content.stringValue("description"))
             case .miniProgram:
                 RichCardMessageView(title: String(localized: "Mini program"), detail: content.previewText, symbol: "app", outgoing: outgoing)
             case .quote, .forward, .thread:
                 AttachmentMessageView(title: content.contentType.title, detail: content.previewText, symbol: "arrowshape.turn.up.left", outgoing: outgoing)
             case .system, .notification, .announcement:
-                RichCardMessageView(title: content.contentType.title, detail: content.previewText, symbol: "megaphone", outgoing: outgoing)
-            case .vote, .task, .schedule:
+                FlareIMUI.SystemMessageView(text: content.previewText)
+            case .vote:
+                FlareIMUI.VoteMessageView(title: content.stringValue("title") ?? String(localized: "Vote"))
+            case .task:
+                FlareIMUI.TaskMessageView(title: content.stringValue("title") ?? String(localized: "Task"))
+            case .schedule:
                 StructuredWorkMessageView(content: content, outgoing: outgoing)
             case .custom, .placeholder:
                 AttachmentMessageView(title: content.contentType.title, detail: content.previewText, symbol: "shippingbox", outgoing: outgoing)
@@ -234,6 +250,7 @@ private struct OutgoingBubbleTail: Shape {
 
 private struct EmojiAwareTextMessageView: View {
     let content: MessageContent
+    let outgoing: Bool
 
     var body: some View {
         if let rawText = content.stringValue("text", "plainText"),
@@ -252,8 +269,7 @@ private struct EmojiAwareTextMessageView: View {
                   let emoji = EmojiPresentation.singleEmoji(in: rawText) {
             UnicodeEmojiMessageView(value: emoji)
         } else {
-            Text(content.previewText)
-                .font(.body)
+            FlareIMUI.TextMessageView(text: content.previewText, isSelf: outgoing)
         }
     }
 }

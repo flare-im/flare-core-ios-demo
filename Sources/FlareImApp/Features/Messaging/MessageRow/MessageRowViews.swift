@@ -18,8 +18,7 @@ struct MessageRow: View {
         HStack(alignment: .bottom, spacing: FlareDesign.Spacing.sm) {
             if outgoing { Spacer(minLength: 70) }
             if !outgoing {
-                AvatarView(title: message.senderTitle, imageURL: message.senderAvatar, tint: .blue)
-                    .frame(width: 30, height: 30)
+                AvatarView(title: message.senderTitle, imageURL: message.senderAvatar, size: 30)
             }
             VStack(alignment: outgoing ? .trailing : .leading, spacing: FlareDesign.Spacing.xs) {
                 if !outgoing {
@@ -123,8 +122,7 @@ struct MessagePreviewSheet: View {
                     .padding(.top, FlareDesign.Spacing.md)
 
                 HStack(spacing: FlareDesign.Spacing.md) {
-                    AvatarView(title: message.senderTitle, imageURL: message.senderAvatar, tint: .blue)
-                        .frame(width: 38, height: 38)
+                    AvatarView(title: message.senderTitle, imageURL: message.senderAvatar, size: 38)
                     VStack(alignment: .leading, spacing: 2) {
                         Text(message.senderTitle)
                             .font(.headline.weight(.bold))

@@ -1,4 +1,5 @@
 import FlareCoreAppleSDK
+import FlareIMUI
 import AVFoundation
 import AVKit
 import SwiftUI
@@ -12,30 +13,20 @@ struct ImageMessageView: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: FlareDesign.Spacing.xs) {
-            Group {
-                if let url = displayURL {
-                    mediaImage(url: url)
-                } else {
-                    imagePlaceholder
+            FlareIMUI.ImageMessageView(
+                src: displayURL?.absoluteString,
+                width: imageDisplaySize.width,
+                height: imageDisplaySize.height,
+                alt: content.stringValue("description", "title"),
+                onTap: {
+                    guard let url = displayURL else { return }
+                    onOpen(MediaPreview(
+                        kind: .image,
+                        url: url,
+                        title: content.stringValue("description", "title") ?? String(localized: "Image")
+                    ))
                 }
-            }
-            .frame(width: imageDisplaySize.width, height: imageDisplaySize.height)
-            .background(imageBackground)
-            .clipShape(RoundedRectangle(cornerRadius: imageCornerRadius, style: .continuous))
-            .overlay {
-                RoundedRectangle(cornerRadius: imageCornerRadius, style: .continuous)
-                    .stroke(Color.black.opacity(0.05), lineWidth: 0.5)
-            }
-            .shadow(color: Color.black.opacity(outgoing ? 0.12 : 0.08), radius: outgoing ? 10 : 8, x: 0, y: 4)
-            .contentShape(RoundedRectangle(cornerRadius: imageCornerRadius, style: .continuous))
-            .onTapGesture {
-                guard let url = displayURL else { return }
-                onOpen(MediaPreview(
-                    kind: .image,
-                    url: url,
-                    title: content.stringValue("description", "title") ?? String(localized: "Image")
-                ))
-            }
+            )
 
             if let caption = imageCaption {
                 Text(caption)
@@ -250,34 +241,11 @@ struct AudioMessageView: View {
     @State private var timeObserver: Any?
 
     var body: some View {
-        Button {
-            togglePlayback()
-        } label: {
-            HStack(spacing: FlareDesign.Spacing.sm) {
-                if outgoing {
-                    progressLabel
-                    Spacer(minLength: FlareDesign.Spacing.sm)
-                    VoiceWaveformBars(active: isPlaying, outgoing: outgoing)
-                    voiceIcon
-                } else {
-                    voiceIcon
-                    VoiceWaveformBars(active: isPlaying, outgoing: outgoing)
-                    Spacer(minLength: FlareDesign.Spacing.sm)
-                    progressLabel
-                }
-            }
-            .padding(.horizontal, FlareDesign.Spacing.sm)
-            .frame(width: voiceWidth, height: 38)
-            .background(audioPillBackground)
-            .overlay {
-                Capsule()
-                    .stroke(outgoing ? Color.clear : Color.black.opacity(0.04), lineWidth: 0.5)
-            }
-            .clipShape(Capsule())
-            .shadow(color: audioPillShadow, radius: outgoing ? 8 : 5, x: 0, y: 3)
-            .contentShape(Capsule())
-        }
-        .buttonStyle(.plain)
+        FlareIMUI.VoiceMessageView(
+            seconds: max(1, playbackSeconds),
+            playing: isPlaying,
+            onPlay: { togglePlayback() }
+        )
         .disabled(displayURL == nil)
         .opacity(displayURL == nil ? 0.55 : 1)
         .accessibilityLabel(Text("Voice message"))

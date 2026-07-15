@@ -1,4 +1,5 @@
 import FlareCoreAppleSDK
+import FlareIMUI
 import AVFoundation
 import AVKit
 import SwiftUI
@@ -128,8 +129,7 @@ struct ChatView: View {
                 }
                 .buttonStyle(.plain)
             }
-            AvatarView(title: conversation.appTitle, imageURL: conversation.avatarUrl, tint: .orange)
-                .frame(width: 42, height: 42)
+            AvatarView(title: conversation.appTitle, imageURL: conversation.avatarUrl, size: 42)
             VStack(alignment: .leading, spacing: FlareDesign.Spacing.xxs) {
                 Text(conversation.appTitle)
                     .font(.headline.weight(.bold))
@@ -340,18 +340,14 @@ private struct HeaderIconButton: View {
     }
 }
 
+/// Timeline day/time separator → delegates to `FlareIMUI.DatePillView` (kit is a
+/// parity match: centered capsule pill with border + shadow). App keeps only the
+/// vertical rhythm around it.
 private struct TimelineDatePill: View {
     let text: String
 
     var body: some View {
-        Text(text)
-            .font(.caption2.weight(.semibold))
-            .foregroundStyle(FlareDesign.textTertiary)
-            .padding(.horizontal, FlareDesign.Spacing.md)
-            .padding(.vertical, FlareDesign.Spacing.xs)
-            .background(FlareDesign.surface)
-            .clipShape(Capsule())
-            .overlay(Capsule().stroke(Color.black.opacity(0.06), lineWidth: 1))
+        FlareIMUI.DatePillView(label: text)
             .padding(.vertical, FlareDesign.Spacing.xs)
     }
 }
