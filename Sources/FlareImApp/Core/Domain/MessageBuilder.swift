@@ -118,22 +118,23 @@ enum MessageBuilder {
                 extra: ["source": "ios-example"]
             ))
         case .createForward:
-            let defaultSource = selectedMessages.last
-            let defaultSourceMessageId = defaultSource?.serverId.isEmpty == false
-                ? defaultSource?.serverId ?? ""
-                : defaultSource?.clientMsgId ?? ""
-            let sourceMessageId = payloadString(payload, "sourceMessageId", default: defaultSourceMessageId)
-            let source = ForwardSourceMessage(
-                sourceMessageId: sourceMessageId,
-                sourceConversationId: payloadString(payload, "sourceConversationId", default: defaultSource?.conversationId ?? conversationId),
-                sourceSenderId: payloadString(payload, "sourceSenderId", default: defaultSource?.senderId ?? ""),
-                plainText: payloadString(payload, "plainText", default: defaultSource?.previewText ?? "")
-            )
+            // 必须传**完整消息**而不是 id 存根：转发载荷要把原文嵌进去，
+            // 核心侧的 forward_item_from_source 会读 content / senderId / conversationId。
+            // 早先按 ForwardSourceMessage 传，反序列化成 IMMessage 时缺必填字段直接
+            // INVALID_PARAMETER，转发每次都失败；契约已改成 Message，这里没跟上，
+            // 结果整个 app 编译不过。
+            guard let source = selectedMessages.last else {
+                throw FlareSdkException(
+                    code: "invalid_parameter",
+                    message: String(localized: "Select a message to forward first."),
+                    operation: "message_builder.create_forward"
+                )
+            }
             return try await client.messageBuilder.buildForward(BuildForwardMessageRequest(
                 conversationId: conversationId,
                 merge: true,
                 title: payloadString(payload, "title", default: "转发消息"),
-                sourceMessages: [source]
+                sourceMessages: [source.core]
             ))
         case .createQuote:
             let quotedTextPreview = payloadString(payload, "quotedTextPreview", default: selectedMessages.last?.previewText ?? "")

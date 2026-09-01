@@ -1,4 +1,5 @@
 import Foundation
+import FlareIMUI
 import FlareCoreAppleSDK
 
 enum FlareFormatters {
@@ -43,9 +44,16 @@ enum FlareFormatters {
             if flare.code == "native_error_10", flare.operation == "sdk.login" {
                 return String(localized: "Login failed: cannot reach the Flare server. Make sure it is running and check the current protocol and server address.")
             }
-            return flare.errorDescription ?? flare.message
+            // 核心抛的是 i18n key（如 sdk.message.card.avatar.invalid_url），
+            // 直接透出 message 会把这串 key 显示给用户。交给 kit 统一翻成人话。
+            let raw = flare.errorDescription ?? flare.message
+            return FlareSdkErrorText.describe(
+                raw,
+                fallback: String(localized: "The operation failed."))
         }
-        return error.localizedDescription
+        return FlareSdkErrorText.describe(
+            error.localizedDescription,
+            fallback: String(localized: "The operation failed."))
     }
 
     static func jsonPreview(_ value: Any) -> String {
