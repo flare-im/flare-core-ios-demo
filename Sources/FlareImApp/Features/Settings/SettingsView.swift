@@ -38,6 +38,18 @@ struct SettingsView: View {
                     }
                     SecureField("Token secret", text: settings.draftBinding(\.tokenSecret))
                         .textFieldStyle(.roundedBorder)
+                    // 直接填服务端签好的 token 就不需要本地持有签名密钥。
+                    // resolveToken 里 tokenOverride 优先于本地自签，但一直没有界面入口，
+                    // 于是这个 app 实际上只能连"自己握有密钥"的服务器 ——
+                    // 而把签名密钥放进客户端等于让任何拿到安装包的人伪造任意用户身份。
+                    TextField("Access token (optional)", text: settings.draftBinding(\.tokenOverride))
+                        .textFieldStyle(.roundedBorder)
+                        // 不加 .textInputAutocapitalization：这个包同时编 macOS，
+                        // 那个修饰符只在 iOS 可用。
+                        .autocorrectionDisabled()
+                    Text("Leave empty to sign locally with the token secret above.")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
                 }
                 .padding(FlareDesign.Spacing.lg)
                 .flarePanel()

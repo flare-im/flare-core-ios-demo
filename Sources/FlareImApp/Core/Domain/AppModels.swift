@@ -212,7 +212,7 @@ struct LoginDraft: Equatable {
     var tokenTtlSeconds = LoginDefaults.tokenTtlSeconds
     var libraryPath = ""
     var dataSubfolder = "flare-core-ios-app"
-    var tokenOverride = ""
+    var tokenOverride = LoginDefaults.accessToken
 
     var visibleServerAddressLabel: String {
         switch transportMode {
@@ -305,7 +305,24 @@ struct LoginDraft: Equatable {
 }
 
 enum LoginDefaults {
-    static let webSocketURL = "ws://127.0.0.1:60051/ws"
+    /// 允许用环境变量覆盖联调地址与接入 token。
+    ///
+    /// 模拟器上没法可靠地手输 256 字符的 JWT（Android 那边实测 adb input text
+    /// 只落 12~26 个字符就被 IME 丢掉），没有注入口就没法做端到端验证。
+    /// 注入的是**token**而不是签名密钥：密钥进客户端等于让任何拿到安装包的人
+    /// 伪造任意用户身份。用法：
+    ///   SIMCTL_CHILD_FLARE_WS_URL=... SIMCTL_CHILD_FLARE_ACCESS_TOKEN=... \
+    ///     xcrun simctl launch <udid> <bundle-id>
+    static func envOverride(_ key: String) -> String? {
+        let value = ProcessInfo.processInfo.environment[key]?
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        return (value?.isEmpty == false) ? value : nil
+    }
+
+    static var webSocketURL: String { envOverride("FLARE_WS_URL") ?? defaultWebSocketURL }
+    static var accessToken: String { envOverride("FLARE_ACCESS_TOKEN") ?? "" }
+
+    static let defaultWebSocketURL = "ws://127.0.0.1:60051/ws"
     static let quicURL = "quic://127.0.0.1:60052"
     static let tenantId = "0"
     static let tokenIssuer = "flare-im-core"
