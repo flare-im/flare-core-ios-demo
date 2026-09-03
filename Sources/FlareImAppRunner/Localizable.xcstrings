@@ -2,6 +2,9 @@
   "sourceLanguage" : "en",
   "version" : "1.0",
   "strings" : {
+    "The server rejected the access token: the signing secret or issuer does not match the server, or the token has expired. Check the signing secret and try again." : {
+      "localizations" : { "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "接入 Token 被服务端拒绝：签名密钥或签发者与服务端不一致，或 Token 已过期。请核对「签名密钥」后重试。" } } }
+    },
     "Messages" : {
       "localizations" : { "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "消息" } } }
     },

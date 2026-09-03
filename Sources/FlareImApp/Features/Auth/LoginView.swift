@@ -102,7 +102,7 @@ struct LoginView: View {
             serverConfigSection
 
             if let error = auth.lastError {
-                LoginErrorBanner(message: error)
+                LoginErrorBanner(message: LoginErrorText.display(error))
                     .padding(.top, FlareDesign.Spacing.lg)
             }
 
