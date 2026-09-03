@@ -190,6 +190,25 @@ struct LoginView: View {
                 )
                 .padding(.top, FlareDesign.Spacing.xs)
             }
+
+            // 两条路，优先级：填了 token 就直接用；否则用密钥按 user id 本地签发。
+            // 密钥做成**运行时输入**而不是打进安装包：打进去等于让任何拿到安装包的人
+            // 伪造任意用户身份。填在这里只落在本机，跟服务器地址一样。
+            // 此前这两项只在 Settings 里，登录页看不到——想"只输 user id 就登录"得先去翻设置。
+            LoginInputField(
+                title: String(localized: "Access token (optional)"),
+                placeholder: String(localized: "Leave empty to sign locally with the token secret"),
+                systemImage: "key",
+                text: auth.draftBinding(\.tokenOverride)
+            )
+            .padding(.top, FlareDesign.Spacing.xs)
+            LoginInputField(
+                title: String(localized: "Token secret (optional)"),
+                placeholder: String(localized: "Your server's signing secret — mints a token from the user ID"),
+                systemImage: "lock",
+                text: auth.draftBinding(\.tokenSecret)
+            )
+            .padding(.top, FlareDesign.Spacing.xs)
         }
     }
 
