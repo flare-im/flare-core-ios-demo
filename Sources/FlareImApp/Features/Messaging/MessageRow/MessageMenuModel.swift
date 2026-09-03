@@ -49,32 +49,42 @@ struct MessageMenuModel: Equatable, Sendable {
         isFailed: Bool,
         multiSelectMode: Bool
     ) -> MessageMenuModel {
-        let recalled = message.isRecalled
-        let deleted = message.menuIsDeleted
-        let active = isConnected && !recalled && !deleted
-        let selfSent = currentUserId.map { message.senderId == $0 } ?? false
-        let editableType = message.content?.contentType == .text || message.content?.contentType == .richText
+        // 可用性统一由 MessageActions 判定（真源是核心 domain::message_actions，
+        // 由 sdk-spec/message-action-vectors.json 逐位钉住）。
+        //
+        // 收敛前这里自成一套，与核心有几处分歧，最重的一处是 active 里折了
+        // isConnected —— **一断网整个菜单就塌了**（删除/编辑/撤回/置顶全不可用），
+        // 而核心只对"重发"要求连接：其余动作是本地或可排队的。
+        let can = MessageActions.availability(
+            MessageActionInput(
+                isSelf: currentUserId.map { message.senderId == $0 } ?? false,
+                // ⚠️ 适配要按**这个 app 的真实数据形态**来，不能照抄 wire 字段：
+                // core.messageType 常为 0（未填），真正可靠的是 content.contentType；
+                // 撤回也不走 status，而是 isRecalled。既有菜单用例正是抓这两点。
+                messageType: message.menuNumericType,
+                status: message.menuNumericStatus,
+                hasText: message.menuCopyableText.isEmpty == false,
+                isPending: isPending,
+                isPinned: message.menuIsPinned,
+                isConnected: isConnected,
+                multiSelectMode: multiSelectMode,
+                isFailed: isFailed
+            )
+        )
+        let canReact = can.canReact
+        let canReply = can.canReply
+        let canForward = can.canForward
+        let canCopy = can.canCopy
+        let canEdit = can.canEdit
+        let canDelete = can.canDelete
+        let canRecall = can.canRecall
+        let canPin = can.canPin
+        let canMultiSelect = can.canMultiSelect
+        let canSave = can.canSave
         let pinned = message.menuIsPinned
 
-        let canReact = active && !isPending
-        let canReply = !multiSelectMode && !recalled && !deleted
-        let canForward = !recalled && !deleted && !isPending
-        let canCopy = !recalled && !deleted && message.previewText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty == false
-        let canEdit = !multiSelectMode && selfSent && active && !isPending && !isFailed && editableType
-        let canDelete = active
-        let canRecall = !multiSelectMode && selfSent && active && !isFailed
-        let canPin = active && !isPending
-        let canMultiSelect = !recalled && !deleted
-        let mediaType: Bool = {
-            switch message.content?.contentType {
-            case .image, .imageGroup, .video, .audio, .file: return true
-            default: return false
-            }
-        }()
-        let canSave = mediaType && !recalled && !deleted && !isPending
-
         var quick: [MessageMenuActionItem] = []
-        if isFailed && selfSent && isConnected {
+        if can.canResend {
             quick.append(item(.resend))
         }
         if canReply {
@@ -94,16 +104,19 @@ struct MessageMenuModel: Equatable, Sendable {
         if canMultiSelect {
             list.append(item(.multiSelect))
         }
-        if active {
+        if canDelete {
             list.append(item(.mark))
         }
-        if canPin {
-            list.append(item(pinned ? .unpin : .pin))
+        if can.canPin {
+            list.append(item(.pin))
+        }
+        if can.canUnpin {
+            list.append(item(.unpin))
         }
         if canCopy {
             list.append(item(.copy))
         }
-        if !recalled && !deleted {
+        if canMultiSelect {
             list.append(item(.preview))
         }
         if canSave {
@@ -165,6 +178,42 @@ struct MessageMenuModel: Equatable, Sendable {
 private extension AppMessage {
     var menuIsPinned: Bool {
         core.attributes.booleanValue(forAnyOf: ["pinned", "isPinned", "messagePinned"])
+    }
+
+    /// 可复制的正文。
+    ///
+    /// ⚠️ 不能用 previewText：那是**预览**，对图片会回退成 "[图片]" 之类，
+    /// 永远非空 —— 用它判断等于"永远可复制"，图片上就会出现点了没用的复制入口。
+    var menuCopyableText: String {
+        guard let data = core.content?.data else { return "" }
+        for key in ["text", "title", "description"] {
+            if let value = data[key]?.value as? String,
+               value.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty == false {
+                return value
+            }
+        }
+        return ""
+    }
+
+    /// 映射到核心的数值消息类型。content.contentType 是这个 app 里可靠的来源。
+    var menuNumericType: Int {
+        switch core.content?.contentType {
+        case .text: return 1
+        case .image: return 2
+        case .video: return 3
+        case .audio: return 4
+        case .file: return 5
+        case .richText: return 15
+        case .imageGroup: return 16
+        default: return Int(core.messageType)
+        }
+    }
+
+    /// 映射到核心的数值状态。撤回/删除在这个 app 里走的是布尔字段而非 status。
+    var menuNumericStatus: Int {
+        if isRecalled { return 5 }
+        if menuIsDeleted { return 6 }
+        return Int(core.status)
     }
 
     var menuIsDeleted: Bool {
