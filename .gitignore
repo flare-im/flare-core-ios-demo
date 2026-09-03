@@ -35,3 +35,9 @@ Thumbs.db
 .vscode/
 *.swp
 *.swo
+
+# 本机跑 swift test 时需要的 FFI 产物（13MB 二进制，不进仓）。
+# SIP 会剥掉 DYLD_LIBRARY_PATH，所以只能放在这里让 dlopen 找到：
+#   cargo build --release -p flare-im-core-sdk-ffi
+#   cp target/release/libflare_im_core_sdk_ffi.dylib examples/flare-core-ios-app/Frameworks/
+Frameworks/
