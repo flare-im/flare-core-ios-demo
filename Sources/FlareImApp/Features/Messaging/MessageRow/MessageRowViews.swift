@@ -190,6 +190,8 @@ struct MessageActionSheet: View {
     var onDismiss: (() -> Void)?
     @State private var reactionPickerExpanded = false
     @State private var pinScopeDialogOpen = false
+    @State private var editDialogOpen = false
+    @State private var editDraft = ""
     private let sheetInset = FlareDesign.Spacing.lg
 
     private var model: MessageMenuModel {
@@ -246,6 +248,17 @@ struct MessageActionSheet: View {
             Button("Cancel", role: .cancel) {}
         } message: {
             Text("Choose whether this pinned message is visible to everyone or only your own device.")
+        }
+        // 编辑消息：曾经点一下"编辑"就把原文替换成写死的 "Edited from iOS example"，
+        // 没有任何输入入口 —— 用户的内容就这么没了。
+        .alert("Edit message", isPresented: $editDialogOpen) {
+            TextField("New message text", text: $editDraft)
+            Button("Cancel", role: .cancel) {}
+            Button("OK") {
+                let text = editDraft.trimmingCharacters(in: .whitespacesAndNewlines)
+                guard !text.isEmpty else { return }
+                runAndClose { await messaging.messageAction("edit", message: message, text: text) }
+            }
         }
     }
 
@@ -402,7 +415,8 @@ struct MessageActionSheet: View {
                 messaging.openMessagePreview(message)
             }
         case .edit:
-            runAndClose { await messaging.messageAction("edit", message: message) }
+            editDraft = message.previewText
+            editDialogOpen = true
         case .editRich:
             runAndClose { await messaging.messageAction("editRich", message: message) }
         case .delete:

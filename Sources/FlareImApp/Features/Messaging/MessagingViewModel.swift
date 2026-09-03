@@ -474,7 +474,12 @@ final class MessagingViewModel: ObservableObject {
         }
     }
 
-    func messageAction(_ action: String, message: AppMessage, reaction: String = "like") async {
+    func messageAction(
+        _ action: String,
+        message: AppMessage,
+        reaction: String = "like",
+        text: String = ""
+    ) async {
         await perform("message.\(action)") {
             let client = try await requireConnectedClient("Login before message actions")
             let request = messageMutationRequest(message)
@@ -482,7 +487,9 @@ final class MessagingViewModel: ObservableObject {
             case "recall":
                 try await client.messages.recallMessage(request)
             case "edit":
-                try await client.messages.editTextByMessageId(request.merging(["text": AnySendable("Edited from iOS example")]) { $1 })
+                // 正文由调用方给：曾经写死 "Edited from iOS example"，
+                // 点一下"编辑"就把用户的原文替换成占位串，且没有任何输入入口。
+                try await client.messages.editTextByMessageId(request.merging(["text": AnySendable(text)]) { $1 })
             case "editRich":
                 try await client.messages.editRichDocByMessageId(request.merging(["markdown": AnySendable("## Edited rich doc\n\n- **bold** point\n- _italic_ point")]) { $1 })
             case "deleteSelf":
