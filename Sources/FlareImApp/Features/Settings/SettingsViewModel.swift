@@ -58,6 +58,13 @@ final class SettingsViewModel: ObservableObject {
     // MARK: - 媒体缓存管理（SDK 托管的磁盘缓存：用量 / 上限 / 清空）
     @Published var cacheStats: String?
 
+    // 这三个都是**用户动作**，失败必须让用户知道。
+    //
+    // 原来一律 `try?` 吞掉：点"清空缓存"什么都没发生、改上限没生效，
+    // 界面照样一片祥和 —— 用户以为做成了。而这个 app 本来就有统一的
+    // `environment.run` + `lastError` + StatusBanner，只有这里绕过去了。
+    // 读取（stats）保持静默降级：拿不到就不显示，不值得打扰用户。
+
     func refreshCacheStats() async {
         guard let client = session.client else { return }
         if let raw = try? await client.media.getMediaCacheStats() {
@@ -67,13 +74,17 @@ final class SettingsViewModel: ObservableObject {
 
     func setCacheMaxBytes(_ bytes: Int64) async {
         guard let client = session.client else { return }
-        _ = try? await client.media.setMediaCacheMaxBytes(["maxBytes": AnySendable(bytes)])
+        await environment.run("media.setMediaCacheMaxBytes") {
+            _ = try await client.media.setMediaCacheMaxBytes(["maxBytes": AnySendable(bytes)])
+        }
         await refreshCacheStats()
     }
 
     func clearCache() async {
         guard let client = session.client else { return }
-        try? await client.media.clearMediaCache()
+        await environment.run("media.clearMediaCache") {
+            try await client.media.clearMediaCache()
+        }
         await refreshCacheStats()
     }
 
