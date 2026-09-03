@@ -36,6 +36,11 @@ struct MessageActionAvailability: Sendable, Equatable {
 /// 收敛前 iOS 与核心有几处分歧，最重的一处是 `active` 里折了 `isConnected` ——
 /// **一断网整个菜单就塌了**（删除 / 编辑 / 撤回 / 置顶全不可用），
 /// 而核心只对"重发"要求连接：其余动作是本地或可排队的。
+/// 送达状态。真源同样是核心 `domain::message_delivery_state`。
+enum MessageDeliveryStateKind: String {
+    case none, sending, failed, delivered, read
+}
+
 enum MessageActions {
     private static let statusFailed = 4
     private static let statusRecalled = 5
@@ -70,5 +75,22 @@ enum MessageActions {
             canSave: mediaType && active && !input.isPending,
             canResend: isFailed && selfSent && input.isConnected
         )
+    }
+
+    /// 自己发出的消息该显示什么送达状态。视觉：单勾=已送达、双勾=已读。
+    static func deliveryState(
+        isSelf: Bool,
+        status: Int,
+        isRead: Bool,
+        isPending: Bool,
+        isFailed: Bool
+    ) -> MessageDeliveryStateKind {
+        // 对方发来的消息不显示送达状态——那是发送方才关心的事。
+        guard isSelf else { return .none }
+        // 撤回/删除是终态，由占位气泡接管展示。
+        if status == statusRecalled || status == statusDeleted { return .none }
+        if isFailed || status == statusFailed { return .failed }
+        if isPending { return .sending }
+        return isRead ? .read : .delivered
     }
 }

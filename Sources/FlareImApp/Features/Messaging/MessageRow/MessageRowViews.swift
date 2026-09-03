@@ -92,11 +92,23 @@ struct MessageRow: View {
     }
 
     private var deliveryState: MessageDeliveryState {
-        if messaging.pendingMessageKeys.contains(message.appStableId) { return .sending }
-        if messaging.failedMessageKeys.contains(message.appStableId) || message.localState?.failed == true { return .failed }
-        if message.isRecalled { return .none }
-        if outgoing { return message.isRead ? .read : .delivered }
-        return .none
+        // 判定收敛到核心那一份（MessageActions.deliveryState，由 sdk-spec 向量钉住），
+        // 这里只做 AppMessage → 原始字段的适配。
+        let kind = MessageActions.deliveryState(
+            isSelf: outgoing,
+            status: message.menuNumericStatus,
+            isRead: message.isRead,
+            isPending: messaging.pendingMessageKeys.contains(message.appStableId),
+            isFailed: messaging.failedMessageKeys.contains(message.appStableId)
+                || message.localState?.failed == true
+        )
+        switch kind {
+        case .none: return .none
+        case .sending: return .sending
+        case .failed: return .failed
+        case .delivered: return .delivered
+        case .read: return .read
+        }
     }
 
 }

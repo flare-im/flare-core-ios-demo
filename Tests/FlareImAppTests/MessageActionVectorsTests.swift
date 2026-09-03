@@ -18,6 +18,7 @@ final class MessageActionVectorsTests: XCTestCase {
             let isConnected: Bool
             let multiSelectMode: Bool
             let isFailed: Bool
+            let isRead: Bool
         }
         struct Expected: Decodable {
             let canReply, canForward, canCopy, canEdit, canDelete, canRecall: Bool
@@ -26,6 +27,7 @@ final class MessageActionVectorsTests: XCTestCase {
         let label: String
         let input: Input
         let expected: Expected
+        let deliveryState: String
     }
 
     private struct Vectors: Decodable { let cases: [Vector] }
@@ -68,6 +70,19 @@ final class MessageActionVectorsTests: XCTestCase {
                 canMultiSelect: e.canMultiSelect, canSave: e.canSave, canResend: e.canResend
             )
             XCTAssertEqual(actual, expected, "与核心不一致：\(vector.label)")
+
+            // 送达状态同样对齐核心：iOS 的 deliveryState 派生逻辑见 MessageRowViews。
+            let delivery = MessageActions.deliveryState(
+                isSelf: vector.input.isSelf,
+                status: vector.input.status,
+                isRead: vector.input.isRead,
+                isPending: vector.input.isPending,
+                isFailed: vector.input.isFailed
+            )
+            XCTAssertEqual(
+                delivery.rawValue, vector.deliveryState,
+                "送达状态与核心不一致：\(vector.label)"
+            )
         }
     }
 }

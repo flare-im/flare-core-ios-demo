@@ -175,7 +175,7 @@ struct MessageMenuModel: Equatable, Sendable {
     }
 }
 
-private extension AppMessage {
+extension AppMessage {
     var menuIsPinned: Bool {
         core.attributes.booleanValue(forAnyOf: ["pinned", "isPinned", "messagePinned"])
     }
