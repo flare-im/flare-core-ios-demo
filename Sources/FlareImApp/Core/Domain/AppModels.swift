@@ -207,9 +207,9 @@ struct LoginDraft: Equatable {
     var quicUrl = LoginDefaults.quicURL
     var tlsCaCertPath = ""
     var tenantId = LoginDefaults.tenantId
-    var tokenSecret = LoginDefaults.tokenSecret()
-    var tokenIssuer = LoginDefaults.tokenIssuer
-    var tokenTtlSeconds = LoginDefaults.tokenTtlSeconds
+    /// 网关 HTTP 基址：SDK 托管 token 时向 {httpUrl}/api/v1/auth/tokens 签发并自动刷新。
+    /// 客户端从不持有签名密钥。
+    var httpUrl = LoginDefaults.httpURL
     var libraryPath = ""
     var dataSubfolder = "flare-core-ios-app"
     var tokenOverride = LoginDefaults.accessToken
@@ -320,78 +320,14 @@ enum LoginDefaults {
     }
 
     static var webSocketURL: String { envOverride("FLARE_WS_URL") ?? defaultWebSocketURL }
+    static var httpURL: String { envOverride("FLARE_HTTP_URL") ?? defaultHttpURL }
     static var accessToken: String { envOverride("FLARE_ACCESS_TOKEN") ?? "" }
 
     static let defaultWebSocketURL = "ws://127.0.0.1:60051/ws"
+    static let defaultHttpURL = "http://127.0.0.1:50050"
     static let quicURL = "quic://127.0.0.1:60052"
     static let tenantId = "0"
-    static let tokenIssuer = "flare-im-core"
-    static let tokenTtlSeconds = "3600"
-    static let fallbackTokenSecret = "flare-dev-secret"
 
-    static func tokenSecret(
-        environment: [String: String] = ProcessInfo.processInfo.environment,
-        fileManager: FileManager = .default,
-        sourceFile: String = #filePath,
-        currentDirectoryPath: String = FileManager.default.currentDirectoryPath
-    ) -> String {
-        if let secret = firstNonEmpty(environment, keys: [
-            "VITE_FLARE_TOKEN_SECRET",
-            "ACCESS_GATEWAY_TOKEN_SECRET",
-            "FLARE_API_GATEWAY_TOKEN_SECRET"
-        ]) {
-            return secret
-        }
-        let configuredPath = environment["FLARE_DEV_TOKEN_SECRET_FILE"]?.trimmingCharacters(in: .whitespacesAndNewlines)
-        let candidates = ([configuredPath] + localDevTokenSecretCandidates(
-            sourceFile: sourceFile,
-            currentDirectoryPath: currentDirectoryPath
-        )).compactMap { $0 }
-        for path in candidates where fileManager.isReadableFile(atPath: path) {
-            if let secret = try? String(contentsOfFile: path, encoding: .utf8).trimmingCharacters(in: .whitespacesAndNewlines),
-               !secret.isEmpty {
-                return secret
-            }
-        }
-        return fallbackTokenSecret
-    }
-
-    private static func firstNonEmpty(_ environment: [String: String], keys: [String]) -> String? {
-        for key in keys {
-            let value = environment[key]?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
-            if !value.isEmpty { return value }
-        }
-        return nil
-    }
-
-    private static func localDevTokenSecretCandidates(sourceFile: String, currentDirectoryPath: String) -> [String] {
-        let anchors = [
-            URL(fileURLWithPath: sourceFile).deletingLastPathComponent(),
-            URL(fileURLWithPath: currentDirectoryPath, isDirectory: true),
-            Bundle.main.bundleURL.deletingLastPathComponent()
-        ]
-        var seen = Set<String>()
-        var candidates: [String] = []
-        for anchor in anchors {
-            var cursor = anchor.standardizedFileURL
-            for _ in 0..<12 {
-                for relativePath in [
-                    "flare-im-core/logs/.dev-token-secret",
-                    "../flare-im-core/logs/.dev-token-secret",
-                    "../../../flare-im-core/logs/.dev-token-secret"
-                ] {
-                    let path = cursor.appendingPathComponent(relativePath).standardizedFileURL.path
-                    if seen.insert(path).inserted {
-                        candidates.append(path)
-                    }
-                }
-                let parent = cursor.deletingLastPathComponent()
-                if parent.path == cursor.path { break }
-                cursor = parent
-            }
-        }
-        return candidates
-    }
 }
 
 struct StartConversationDraft: Equatable {

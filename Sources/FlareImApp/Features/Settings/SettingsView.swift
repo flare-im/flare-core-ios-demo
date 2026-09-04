@@ -28,20 +28,12 @@ struct SettingsView: View {
                         .textFieldStyle(.roundedBorder)
                     TextField("WebSocket URL", text: settings.draftBinding(\.wsUrl))
                         .textFieldStyle(.roundedBorder)
-                    HStack {
-                        TextField("Tenant", text: settings.draftBinding(\.tenantId))
-                            .textFieldStyle(.roundedBorder)
-                        TextField("Issuer", text: settings.draftBinding(\.tokenIssuer))
-                            .textFieldStyle(.roundedBorder)
-                        TextField("TTL", text: settings.draftBinding(\.tokenTtlSeconds))
-                            .textFieldStyle(.roundedBorder)
-                    }
-                    SecureField("Token secret", text: settings.draftBinding(\.tokenSecret))
+                    TextField("Tenant", text: settings.draftBinding(\.tenantId))
                         .textFieldStyle(.roundedBorder)
-                    // 直接填服务端签好的 token 就不需要本地持有签名密钥。
-                    // resolveToken 里 tokenOverride 优先于本地自签，但一直没有界面入口，
-                    // 于是这个 app 实际上只能连"自己握有密钥"的服务器 ——
-                    // 而把签名密钥放进客户端等于让任何拿到安装包的人伪造任意用户身份。
+                    // 网关 HTTP 基址：SDK 向它签发接入 token 并自动刷新；客户端从不持有签名密钥。
+                    TextField("Gateway HTTP URL", text: settings.draftBinding(\.httpUrl))
+                        .textFieldStyle(.roundedBorder)
+                    // 应用托管：直接填业务后端签好的 token，SDK 原样使用；留空则 SDK 托管，向网关签发并自动刷新。
                     TextField("Access token (optional)", text: settings.draftBinding(\.tokenOverride))
                         .textFieldStyle(.roundedBorder)
                         // 不加 .textInputAutocapitalization：这个包同时编 macOS，

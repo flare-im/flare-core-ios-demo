@@ -2,7 +2,7 @@ import Foundation
 
 /// 热启动会话档案：登录成功后保存，下次启动免登录直接
 /// prepare(本地库) → 本地出图 → 后台 connect。
-/// dev token 由 `LoginDefaults.tokenSecret()` 本地重签，无需持久化。
+/// 接入 token 由 SDK 向网关签发并自动刷新，无需持久化。
 enum SavedSessionStore {
     private static let userIdKey = "flare.savedSession.userId"
     private static let wsUrlKey = "flare.savedSession.wsUrl"

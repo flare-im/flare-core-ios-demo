@@ -67,64 +67,7 @@ final class FlareImAppTests: XCTestCase {
         XCTAssertEqual(draft.transportMode, .websocket)
         XCTAssertEqual(draft.quicUrl, "quic://127.0.0.1:60052")
         XCTAssertEqual(draft.tenantId, "0")
-        XCTAssertFalse(draft.tokenSecret.isEmpty)
-        XCTAssertEqual(draft.tokenIssuer, "flare-im-core")
-        XCTAssertEqual(UInt64(draft.tokenTtlSeconds), 3600)
-    }
-
-    func testLoginDefaultsPreferLocalDevTokenSecretEnvironment() {
-        let secret = LoginDefaults.tokenSecret(environment: ["VITE_FLARE_TOKEN_SECRET": " local-secret "])
-        XCTAssertEqual(secret, "local-secret")
-    }
-
-    func testLoginDefaultsLoadConfiguredLocalDevTokenSecretFile() throws {
-        let fileManager = FileManager.default
-        let root = fileManager.temporaryDirectory
-            .appendingPathComponent("flare-ios-configured-secret-\(UUID().uuidString)", isDirectory: true)
-        try fileManager.createDirectory(at: root, withIntermediateDirectories: true)
-        defer { try? fileManager.removeItem(at: root) }
-
-        let secretFile = root.appendingPathComponent(".dev-token-secret")
-        try " file-secret \n".write(to: secretFile, atomically: true, encoding: .utf8)
-
-        let secret = LoginDefaults.tokenSecret(
-            environment: ["FLARE_DEV_TOKEN_SECRET_FILE": secretFile.path],
-            sourceFile: root.appendingPathComponent("Missing.swift").path,
-            currentDirectoryPath: root.path
-        )
-
-        XCTAssertEqual(secret, "file-secret")
-    }
-
-    func testLoginDefaultsDiscoverLocalDevTokenSecretFromAncestor() throws {
-        let fileManager = FileManager.default
-        let repoRoot = fileManager.temporaryDirectory
-            .appendingPathComponent("flare-ios-ancestor-secret-\(UUID().uuidString)", isDirectory: true)
-        let serverLogs = repoRoot.appendingPathComponent("flare-im-core/logs", isDirectory: true)
-        let appDir = repoRoot.appendingPathComponent(
-            "flare-im-core-client-sdk/examples/flare-core-ios-app",
-            isDirectory: true
-        )
-        try fileManager.createDirectory(at: serverLogs, withIntermediateDirectories: true)
-        try fileManager.createDirectory(at: appDir, withIntermediateDirectories: true)
-        defer { try? fileManager.removeItem(at: repoRoot) }
-
-        try " ancestor-secret \n".write(
-            to: serverLogs.appendingPathComponent(".dev-token-secret"),
-            atomically: true,
-            encoding: .utf8
-        )
-
-        let sourceFile = appDir
-            .appendingPathComponent("Sources/FlareImApp/Core/Domain/AppModels.swift")
-            .path
-        let secret = LoginDefaults.tokenSecret(
-            environment: [:],
-            sourceFile: sourceFile,
-            currentDirectoryPath: appDir.path
-        )
-
-        XCTAssertEqual(secret, "ancestor-secret")
+        XCTAssertEqual(draft.httpUrl, "http://127.0.0.1:50050")
     }
 
     func testLoginTransportConfigDefaultsToWebSocket() throws {
@@ -279,7 +222,7 @@ final class FlareImAppTests: XCTestCase {
         draft.userId = environment["FLARE_IOS_LIVE_USER_ID"] ?? "1"
         draft.wsUrl = environment["FLARE_IOS_LIVE_WS_URL"] ?? LoginDefaults.webSocketURL
         draft.libraryPath = dylib
-        draft.tokenSecret = LoginDefaults.tokenSecret(environment: environment)
+        draft.httpUrl = environment["FLARE_IOS_LIVE_HTTP_URL"] ?? LoginDefaults.httpURL
         let session = AppSession()
         let dataURL = FileManager.default.temporaryDirectory
             .appendingPathComponent("flare-ios-live-login-\(UUID().uuidString)", isDirectory: true)
@@ -309,7 +252,7 @@ final class FlareImAppTests: XCTestCase {
         draft.userId = environment["FLARE_IOS_LIVE_USER_ID"] ?? "11"
         draft.wsUrl = environment["FLARE_IOS_LIVE_WS_URL"] ?? LoginDefaults.webSocketURL
         draft.libraryPath = dylib
-        draft.tokenSecret = LoginDefaults.tokenSecret(environment: environment)
+        draft.httpUrl = environment["FLARE_IOS_LIVE_HTTP_URL"] ?? LoginDefaults.httpURL
 
         let session = AppSession()
         let repository = ViewDataRepository()
@@ -347,7 +290,7 @@ final class FlareImAppTests: XCTestCase {
         draft.userId = environment["FLARE_IOS_LIVE_USER_ID"] ?? "11"
         draft.wsUrl = environment["FLARE_IOS_LIVE_WS_URL"] ?? LoginDefaults.webSocketURL
         draft.libraryPath = dylib
-        draft.tokenSecret = LoginDefaults.tokenSecret(environment: environment)
+        draft.httpUrl = environment["FLARE_IOS_LIVE_HTTP_URL"] ?? LoginDefaults.httpURL
 
         let session = AppSession()
         let repository = ViewDataRepository()

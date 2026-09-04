@@ -197,16 +197,16 @@ struct LoginView: View {
             // 此前这两项只在 Settings 里，登录页看不到——想"只输 user id 就登录"得先去翻设置。
             LoginInputField(
                 title: String(localized: "Access token (optional)"),
-                placeholder: String(localized: "Leave empty to sign locally with the token secret"),
+                placeholder: String(localized: "Leave empty and the SDK issues one from the gateway; paste a backend-issued token to use it as-is"),
                 systemImage: "key",
                 text: auth.draftBinding(\.tokenOverride)
             )
             .padding(.top, FlareDesign.Spacing.xs)
             LoginInputField(
-                title: String(localized: "Token secret (optional)"),
-                placeholder: String(localized: "Your server's signing secret — mints a token from the user ID"),
-                systemImage: "lock",
-                text: auth.draftBinding(\.tokenSecret)
+                title: String(localized: "Gateway HTTP URL"),
+                placeholder: String(localized: "e.g. http://127.0.0.1:50050 — the SDK issues access tokens from it"),
+                systemImage: "network",
+                text: auth.draftBinding(\.httpUrl)
             )
             .padding(.top, FlareDesign.Spacing.xs)
         }

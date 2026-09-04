@@ -50,23 +50,11 @@ final class AppSession: ObservableObject {
 
         progress("Initializing SDK")
         var initConfig = try draft.sdkTransportConfig()
-        initConfig.merge([
-            "dataUrl": AnySendable(dataURL.absoluteString),
-            "tenantId": AnySendable(draft.tenantId),
-            "platform": AnySendable("apple"),
-            "runtime": AnySendable("swiftui-example")
-        ]) { _, new in new }
+        initConfig.merge(Self.sessionInitConfig(draft: draft, dataURL: dataURL)) { _, new in new }
         try await client.`init`(initConfig)
 
-        progress("Generating core token")
-        let ttl = UInt64(draft.tokenTtlSeconds) ?? 86400
-        let token = try await resolveToken(draft: draft, ttl: ttl)
-
         progress("Logging in")
-        try await client.login([
-            "userId": AnySendable(draft.userId),
-            "token": AnySendable(token)
-        ])
+        try await client.login(Self.loginRequest(draft: draft))
         try await subscribeNativeEvents(client)
 
         // 配置 SDK 托管的媒体磁盘缓存（LRU + 去重，核心已实现）：设根目录 + 上限，
@@ -95,12 +83,7 @@ final class AppSession: ObservableObject {
 
         progress("Initializing SDK")
         var initConfig = try draft.sdkTransportConfig()
-        initConfig.merge([
-            "dataUrl": AnySendable(dataURL.absoluteString),
-            "tenantId": AnySendable(draft.tenantId),
-            "platform": AnySendable("apple"),
-            "runtime": AnySendable("swiftui-example")
-        ]) { _, new in new }
+        initConfig.merge(Self.sessionInitConfig(draft: draft, dataURL: dataURL)) { _, new in new }
         try await client.`init`(initConfig)
 
         progress("Opening local store")
@@ -123,12 +106,7 @@ final class AppSession: ObservableObject {
     func connectInBackground() async {
         guard let client, let draft = lastLoginDraft else { return }
         do {
-            let ttl = UInt64(draft.tokenTtlSeconds) ?? 86400
-            let token = try await resolveToken(draft: draft, ttl: ttl)
-            try await client.connect([
-                "userId": AnySendable(draft.userId),
-                "token": AnySendable(token)
-            ])
+            try await client.connect(Self.loginRequest(draft: draft))
             connectionState = (try? await client.connection.getConnectionState()) ?? connectionState
         } catch {
             connectionState = (try? await client.connection.getConnectionState()) ?? .disconnected
@@ -158,10 +136,6 @@ final class AppSession: ObservableObject {
 
         restoringConnection = true
         defer { restoringConnection = false }
-
-        if draft.tokenOverride.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-            draft.tokenSecret = LoginDefaults.tokenSecret()
-        }
 
         progress("Reconnecting")
         connectionState = .reconnecting
@@ -274,18 +248,32 @@ final class AppSession: ObservableObject {
         installEventSubscriptions(client)
     }
 
-    func resolveToken(draft: LoginDraft, ttl: UInt64) async throws -> String {
+    /// 应用托管：高级区粘贴了业务后端签好的 token 就原样用；否则不传，SDK 向网关签发并自动刷新。
+    nonisolated static func explicitToken(draft: LoginDraft) -> String? {
         let override = draft.tokenOverride.trimmingCharacters(in: .whitespacesAndNewlines)
-        if !override.isEmpty { return override }
-        guard let client else { throw AppStoreError(message: "SDK client is not initialized") }
-        return try await client.generateCoreToken(CoreTokenRequest(
-            userId: draft.userId,
-            secret: draft.tokenSecret,
-            issuer: draft.tokenIssuer,
-            ttlSecs: ttl,
-            deviceId: nil,
-            tenantId: draft.tenantId
-        )).token
+        return override.isEmpty ? nil : override
+    }
+
+    nonisolated static func loginRequest(draft: LoginDraft) -> [String: AnySendable] {
+        var request: [String: AnySendable] = ["userId": AnySendable(draft.userId)]
+        if let token = explicitToken(draft: draft) {
+            request["token"] = AnySendable(token)
+        }
+        return request
+    }
+
+    /// init 里除传输配置外的部分：数据目录、租户、网关 HTTP 基址，以及 SDK 托管 token 的签发地址。
+    /// 客户端不再本地签发（那等于把签名密钥打进 App）。
+    nonisolated static func sessionInitConfig(draft: LoginDraft, dataURL: URL) -> [String: AnySendable] {
+        let httpUrl = draft.httpUrl.trimmingCharacters(in: .whitespacesAndNewlines)
+        return [
+            "dataUrl": AnySendable(dataURL.absoluteString),
+            "tenantId": AnySendable(draft.tenantId),
+            "httpUrl": AnySendable(httpUrl),
+            "auth": AnySendable(["tokenEndpoint": httpUrl] as [String: Any]),
+            "platform": AnySendable("apple"),
+            "runtime": AnySendable("swiftui-example")
+        ]
     }
 
     private func installEventSubscriptions(_ client: any FlareImClientProtocol) {

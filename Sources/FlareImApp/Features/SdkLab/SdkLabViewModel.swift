@@ -46,7 +46,7 @@ final class SdkLabViewModel: ObservableObject {
 
     var coverageRows: [CoverageRow] {
         [
-            CoverageRow(family: "Lifecycle", api: "create, init, generateCoreToken, login, logout", status: "Real", entryPoint: "Login and Settings"),
+            CoverageRow(family: "Lifecycle", api: "create, init, login, logout (token issued by the gateway)", status: "Real", entryPoint: "Login and Settings"),
             CoverageRow(family: "Lifecycle", api: "updateAccessToken, disconnect, uninit, hardReset, dispose", status: "Lab", entryPoint: "SDK Lab Lifecycle"),
             CoverageRow(family: "Connection", api: "isConnected, sessionActive, connection.getConnectionState", status: "Lab", entryPoint: "Diagnostics"),
             CoverageRow(family: "Conversations", api: "list, query, archived, paginated, raw, bootstrap, open timeline", status: "Real/Lab", entryPoint: "Conversation list and Lab"),
@@ -123,8 +123,10 @@ final class SdkLabViewModel: ObservableObject {
             guard let client else { throw unavailable("Login before SDK Lab operations") }
             switch operation {
             case "session.update_access_token":
-                let ttl = UInt64(environment.loginDraft.tokenTtlSeconds) ?? 86400
-                let token = try await session.resolveToken(draft: environment.loginDraft, ttl: ttl)
+                // 客户端不再签发：只把登录页粘贴的 token 应用到核心（应用托管形态）。
+                guard let token = AppSession.explicitToken(draft: environment.loginDraft) else {
+                    throw unavailable("SDK-managed tokens are refreshed by the core; paste a backend-issued access token first")
+                }
                 try await client.updateAccessToken(["token": AnySendable(token)])
             case "connection.disconnect":
                 try await client.connection.disconnect()
