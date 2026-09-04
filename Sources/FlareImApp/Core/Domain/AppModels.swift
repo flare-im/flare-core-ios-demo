@@ -203,9 +203,11 @@ enum LabTab: String, CaseIterable, Identifiable {
 struct LoginDraft: Equatable {
     var userId = LoginDefaults.userId
     var wsUrl = LoginDefaults.webSocketURL
-    var transportMode: LoginTransportMode = .websocket
+    var transportMode: LoginTransportMode = LoginDefaults.transportMode
     var quicUrl = LoginDefaults.quicURL
     var tlsCaCertPath = ""
+    /// 内联信任 CA（PEM 或 base64 DER）：QUIC / wss 连自建 CA 签发证书的服务端时必配；移动端没有稳定文件路径。
+    var tlsCaCert = LoginDefaults.tlsCaCert
     var tenantId = LoginDefaults.tenantId
     /// 网关 HTTP 基址：SDK 托管 token 时向 {httpUrl}/api/v1/auth/tokens 签发并自动刷新。
     /// 客户端从不持有签名密钥。
@@ -278,6 +280,10 @@ struct LoginDraft: Equatable {
         if !tls.isEmpty {
             config["tlsCaCertPath"] = AnySendable(tls)
         }
+        let inlineCa = tlsCaCert.trimmingCharacters(in: .whitespacesAndNewlines)
+        if !inlineCa.isEmpty {
+            config["tlsCaCert"] = AnySendable(inlineCa)
+        }
 
         switch transportMode {
         case .websocket:
@@ -327,7 +333,13 @@ enum LoginDefaults {
 
     static let defaultWebSocketURL = "ws://127.0.0.1:60051/ws"
     static let defaultHttpURL = "http://127.0.0.1:50050"
-    static let quicURL = "quic://127.0.0.1:60052"
+    static var quicURL: String { envOverride("FLARE_QUIC_URL") ?? "quic://127.0.0.1:60052" }
+    /// 模拟器自动化用：预选传输模式（websocket / quic / race）。
+    static var transportMode: LoginTransportMode {
+        envOverride("FLARE_TRANSPORT_MODE").flatMap(LoginTransportMode.init(rawValue:)) ?? .websocket
+    }
+    /// 内联信任 CA，SIMCTL_CHILD_FLARE_TLS_CA_CERT 注入（base64 DER 或 PEM）。
+    static var tlsCaCert: String { envOverride("FLARE_TLS_CA_CERT") ?? "" }
     static let tenantId = "0"
 
 }
