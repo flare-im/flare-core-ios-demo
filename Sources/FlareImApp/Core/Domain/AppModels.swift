@@ -201,7 +201,7 @@ enum LabTab: String, CaseIterable, Identifiable {
 }
 
 struct LoginDraft: Equatable {
-    var userId = ""
+    var userId = LoginDefaults.userId
     var wsUrl = LoginDefaults.webSocketURL
     var transportMode: LoginTransportMode = .websocket
     var quicUrl = LoginDefaults.quicURL
@@ -321,6 +321,8 @@ enum LoginDefaults {
 
     static var webSocketURL: String { envOverride("FLARE_WS_URL") ?? defaultWebSocketURL }
     static var httpURL: String { envOverride("FLARE_HTTP_URL") ?? defaultHttpURL }
+    /// 模拟器自动化用：预填用户 ID（SIMCTL_CHILD_FLARE_USER_ID）。
+    static var userId: String { envOverride("FLARE_USER_ID") ?? "" }
     static var accessToken: String { envOverride("FLARE_ACCESS_TOKEN") ?? "" }
 
     static let defaultWebSocketURL = "ws://127.0.0.1:60051/ws"
