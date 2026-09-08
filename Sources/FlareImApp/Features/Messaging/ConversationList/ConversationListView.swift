@@ -294,16 +294,14 @@ private struct CircleIconButton: View {
     let action: () -> Void
 
     var body: some View {
-        Button(action: action) {
-            Image(systemName: symbol)
-                .font(.system(size: 17, weight: .semibold))
-                .foregroundStyle(tint)
-                .frame(width: 46, height: 46)
-                .background(fill)
-                .clipShape(Circle())
-        }
-        .buttonStyle(.plain)
-        .accessibilityLabel(symbol)
+        FlareIMUI.IconButtonView(
+            systemImage: symbol,
+            accessibilityLabel: symbol,
+            tint: tint,
+            background: fill,
+            customSize: 46,
+            action: action
+        )
     }
 }
 

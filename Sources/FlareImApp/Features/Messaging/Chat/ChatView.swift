@@ -330,13 +330,13 @@ private struct HeaderIconButton: View {
     let action: () -> Void
 
     var body: some View {
-        Button(action: action) {
-            Image(systemName: symbol)
-                .font(FlareDesign.Typography.headline)
-                .foregroundStyle(FlareDesign.textSecondary)
-                .frame(width: 31, height: 31)
-        }
-        .buttonStyle(.plain)
+        FlareIMUI.IconButtonView(
+            systemImage: symbol,
+            accessibilityLabel: symbol,
+            tint: FlareDesign.textSecondary,
+            customSize: 31,
+            action: action
+        )
     }
 }
 

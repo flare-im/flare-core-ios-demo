@@ -1,4 +1,5 @@
 import FlareCoreAppleSDK
+import FlareIMUI
 import SwiftUI
 
 struct SearchView: View {
@@ -8,14 +9,16 @@ struct SearchView: View {
         VStack(spacing: 0) {
             VStack(alignment: .leading, spacing: FlareDesign.Spacing.lg) {
                 SectionHeader(
-                    title: "Message Search",
-                    subtitle: "Covers global and in-conversation search APIs with typed filters."
+                    title: String(localized: "Message Search"),
+                    subtitle: String(localized: "Covers global and in-conversation search APIs with typed filters.")
                 )
                 HStack(spacing: FlareDesign.Spacing.md) {
-                    TextField("Keyword", text: $viewModel.draft.keyword)
-                        .textFieldStyle(.roundedBorder)
-                    TextField("Sender", text: $viewModel.draft.senderId)
-                        .textFieldStyle(.roundedBorder)
+                    InputView(
+                        text: $viewModel.draft.keyword,
+                        placeholder: String(localized: "Keyword"),
+                        onSubmit: { Task { await viewModel.search() } }
+                    )
+                    InputView(text: $viewModel.draft.senderId, placeholder: String(localized: "Sender"))
                         .frame(maxWidth: 180)
                     Picker("Kind", selection: $viewModel.draft.kind) {
                         ForEach(MessageSearchKind.allCasesForExample, id: \.rawValue) { kind in
@@ -43,8 +46,8 @@ struct SearchView: View {
 
             if viewModel.results.isEmpty {
                 EmptyStateView(
-                    title: "No search results",
-                    message: "Enter a keyword or use empty typed filters to probe the SDK search path.",
+                    title: String(localized: "No search results"),
+                    message: String(localized: "Enter a keyword or use empty typed filters to probe the SDK search path."),
                     symbol: "magnifyingglass"
                 )
             } else {

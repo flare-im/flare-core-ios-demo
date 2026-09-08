@@ -3025,6 +3025,56 @@
           }
         }
       }
+    },
+    "Message Search": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "消息搜索"
+          }
+        }
+      }
+    },
+    "Covers global and in-conversation search APIs with typed filters.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "覆盖全局与会话内搜索 API,支持类型过滤。"
+          }
+        }
+      }
+    },
+    "Kind": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "类型"
+          }
+        }
+      }
+    },
+    "No search results": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "无搜索结果"
+          }
+        }
+      }
+    },
+    "Enter a keyword or use empty typed filters to probe the SDK search path.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "输入关键词,或用空类型过滤探查 SDK 搜索路径。"
+          }
+        }
+      }
     }
   }
 }
