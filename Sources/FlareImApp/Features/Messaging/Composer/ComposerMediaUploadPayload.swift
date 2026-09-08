@@ -38,7 +38,7 @@ enum ComposerMediaUploadPayload {
             "audio-\(UUID().uuidString)"
         var payload: [String: Any] = [
             "audioId": mediaId,
-            "description": string(localPayload, "description") ?? "语音消息",
+            "description": string(localPayload, "description") ?? String(localized: "Voice message"),
             "mimeType": string(uploadedMap, "mimeType", "mime_type", "contentType", "content_type", "type") ??
                 string(localPayload, "mimeType") ??
                 "audio/mp4"

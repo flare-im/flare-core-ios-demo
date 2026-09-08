@@ -1,20 +1,47 @@
 import SwiftUI
+import FlareIMUI
+
+// 登录屏:统一登录规格 v2。视觉取自 kit 设计 token,表单用 kit 组件搭建
+// (FormFieldView + InputView + SegmentedControlView)。品牌 F logo。
+// 字段:用户 ID + 协议三选(WebSocket/QUIC/竞速) 常显;WebSocket/Gateway/QUIC URL 收进
+// 可折叠「服务器地址」区(默认收起,点击展开)。不再有 access token 输入(SDK 托管)。
+
+private enum LoginSpec {
+    static let logoSize: CGFloat = 64
+    static let buttonHeight: CGFloat = 48
+    static let gridStep: CGFloat = 40
+    static let formMaxWidth: CGFloat = 430
+    static let titleSize: CGFloat = 24
+    static let welcomeSize: CGFloat = 22
+}
+
+private let loginTransportOrder: [LoginTransportMode] = [.websocket, .quic, .race]
+private let loginTransportLabels = ["WebSocket", "QUIC", String(localized: "Race")]
+
+private func brandGradient(_ c: FlareColors) -> LinearGradient {
+    LinearGradient(colors: [c.primaryActive, c.primary, c.info], startPoint: .topLeading, endPoint: .bottomTrailing)
+}
 
 struct LoginView: View {
     @EnvironmentObject private var auth: AuthViewModel
+    @Environment(\.colorScheme) private var scheme
+    @State private var serverOpen = false
+
+    private var c: FlareColors { FlareColors.of(scheme) }
+    private var protocolIndex: Int { loginTransportOrder.firstIndex(of: auth.loginDraft.transportMode) ?? 0 }
 
     var body: some View {
         GeometryReader { proxy in
             ScrollView {
                 VStack(spacing: 0) {
-                    brandHeader(height: min(max(proxy.size.height * 0.30, 252), 320))
+                    brandHeader(height: min(max(proxy.size.height * 0.32, 252), 320))
                     form
-                        .frame(maxWidth: 430)
+                        .frame(maxWidth: LoginSpec.formMaxWidth)
                         .frame(maxWidth: .infinity)
                 }
                 .frame(minHeight: proxy.size.height, alignment: .top)
             }
-            .background(Color.white)
+            .background(c.bgPrimary)
             .scrollDismissesKeyboard(.interactively)
             .ignoresSafeArea(edges: .top)
             .loadingOverlay(auth.isBusy)
@@ -23,30 +50,16 @@ struct LoginView: View {
 
     private func brandHeader(height: CGFloat) -> some View {
         ZStack {
-            LinearGradient(
-                colors: [Color(red: 0.39, green: 0.10, blue: 0.76), FlareDesign.brand, Color(red: 0.39, green: 0.40, blue: 0.94)],
-                startPoint: .topLeading,
-                endPoint: .bottomTrailing
-            )
+            brandGradient(c)
             LoginGridBackground()
-
-            VStack(spacing: FlareDesign.Spacing.lg) {
-                ZStack {
-                    RoundedRectangle(cornerRadius: FlareDesign.Radius.xl, style: .continuous)
-                        .fill(.white)
-                    Image(systemName: "bubble.left")
-                        .font(.system(size: 33, weight: .medium))
-                        .foregroundStyle(FlareDesign.brand)
-                }
-                .frame(width: 64, height: 64)
-                .shadow(color: Color.black.opacity(0.08), radius: 16, y: 10)
-
-                VStack(spacing: FlareDesign.Spacing.xs) {
+            VStack(spacing: FlareSizes.spacingLg) {
+                FlareBrandLogo(size: LoginSpec.logoSize, variant: .plate)
+                VStack(spacing: FlareSizes.spacingXs) {
                     Text("flare IM")
-                        .font(.system(size: 24, weight: .heavy))
+                        .font(.system(size: LoginSpec.titleSize, weight: .heavy))
                         .foregroundStyle(.white)
                     Text("Secure, fast instant messaging")
-                        .font(.system(size: 14, weight: .regular))
+                        .font(.system(size: FlareSizes.fontSizeLg, weight: .regular))
                         .foregroundStyle(.white.opacity(0.88))
                 }
                 .multilineTextAlignment(.center)
@@ -56,258 +69,161 @@ struct LoginView: View {
     }
 
     private var form: some View {
-        VStack(alignment: .leading, spacing: 0) {
-            VStack(alignment: .leading, spacing: FlareDesign.Spacing.sm) {
+        let transportBinding = auth.draftBinding(\.transportMode)
+        return VStack(alignment: .leading, spacing: FlareSizes.spacingLg) {
+            VStack(alignment: .leading, spacing: FlareSizes.spacingSm) {
                 Text("Welcome back")
-                    .font(FlareDesign.Typography.title)
-                    .foregroundStyle(FlareDesign.textPrimary)
+                    .font(.system(size: LoginSpec.welcomeSize, weight: .bold))
+                    .foregroundStyle(c.textPrimary)
                 Text("Enter your user ID to sign in")
-                    .font(.system(size: 14))
-                    .foregroundStyle(FlareDesign.textSecondary)
+                    .font(.system(size: FlareSizes.fontSizeLg))
+                    .foregroundStyle(c.textSecondary)
             }
-            .padding(.bottom, 28)
+            .padding(.bottom, FlareSizes.spacingSm)
 
-            LoginInputField(
-                title: String(localized: "User ID"),
-                placeholder: String(localized: "Enter user ID"),
-                systemImage: "person",
-                text: auth.draftBinding(\.userId)
-            )
-            .onChange(of: auth.loginDraft.userId) { _ in
-                auth.clearValidation()
+            FormFieldView(
+                label: String(localized: "User ID"),
+                hint: String(localized: "Your user ID is assigned by the system and shown in account settings")
+            ) {
+                InputView(text: auth.draftBinding(\.userId), placeholder: String(localized: "Enter user ID"))
+                    .onChange(of: auth.loginDraft.userId) { _ in auth.clearValidation() }
             }
 
-            HStack(spacing: FlareDesign.Spacing.xs) {
-                Image(systemName: "info.circle")
-                    .font(.caption)
-                    .foregroundStyle(FlareDesign.brand)
-                Text("Your user ID is assigned by the system and shown in account settings")
-                    .font(.caption)
-                    .foregroundStyle(FlareDesign.textTertiary)
+            FormFieldView(label: String(localized: "Protocol")) {
+                SegmentedControlView(options: loginTransportLabels, selectedIndex: protocolIndex) { index in
+                    transportBinding.wrappedValue = loginTransportOrder[index]
+                }
             }
-            .padding(.top, FlareDesign.Spacing.sm)
-            .padding(.bottom, auth.validationMessage == nil ? 22 : 8)
+
+            serverSection
 
             if let validationMessage = auth.validationMessage {
-                HStack(spacing: FlareDesign.Spacing.sm) {
+                HStack(spacing: FlareSizes.spacingSm) {
                     Image(systemName: "exclamationmark.circle")
-                        .font(.caption)
-                    Text(validationMessage)
-                        .font(.caption)
+                    Text(validationMessage).font(.caption)
                 }
-                .foregroundStyle(FlareDesign.danger)
-                .padding(.bottom, FlareDesign.Spacing.xl)
+                .foregroundStyle(c.error)
             }
-
-            serverConfigSection
 
             if let error = auth.lastError {
                 LoginErrorBanner(message: LoginErrorText.display(error))
-                    .padding(.top, FlareDesign.Spacing.lg)
             }
 
             Button {
                 Task { await auth.submit() }
             } label: {
                 Label(auth.isBusy ? "Signing in..." : "Sign in", systemImage: "arrow.right.square")
-                    .font(.system(size: 16, weight: .bold))
+                    .font(.system(size: FlareSizes.fontSize2xl, weight: .bold))
                     .frame(maxWidth: .infinity)
-                    .frame(height: 48)
+                    .frame(height: LoginSpec.buttonHeight)
                     .foregroundStyle(.white)
-                    .background(
-                        LinearGradient(
-                            colors: [FlareDesign.brand, Color(red: 0.55, green: 0.16, blue: 0.92)],
-                            startPoint: .leading,
-                            endPoint: .trailing
-                        )
-                    )
-                    .clipShape(RoundedRectangle(cornerRadius: FlareDesign.Radius.small, style: .continuous))
+                    .background(LinearGradient(colors: [c.primary, c.info], startPoint: .leading, endPoint: .trailing))
+                    .clipShape(RoundedRectangle(cornerRadius: FlareSizes.radiusLg, style: .continuous))
             }
             .buttonStyle(.plain)
             .disabled(!auth.canLogin)
             .opacity(auth.canLogin ? 1 : 0.55)
-            .padding(.top, FlareDesign.Spacing.xxl)
+            .padding(.top, FlareSizes.spacingSm)
 
-            VStack(spacing: FlareDesign.Spacing.sm) {
+            VStack(spacing: FlareSizes.spacingSm) {
                 Text("Your ID is assigned by the admin and shown in the invitation email")
                 Text("ID-only sign-in; secure connection enabled")
             }
             .font(.caption)
-            .foregroundStyle(FlareDesign.textTertiary)
+            .foregroundStyle(c.textTertiary)
             .frame(maxWidth: .infinity)
             .multilineTextAlignment(.center)
-            .padding(.top, FlareDesign.Spacing.xl)
+            .padding(.top, FlareSizes.spacingSm)
         }
-        .padding(.horizontal, FlareDesign.Spacing.md)
+        .padding(.horizontal, FlareSizes.spacingXl)
         .padding(.top, 30)
         .padding(.bottom, 42)
-        .background(Color.white)
+        .background(c.bgPrimary)
     }
 
-    private var serverConfigSection: some View {
-        let transportMode = auth.draftBinding(\.transportMode)
-        return VStack(alignment: .leading, spacing: FlareDesign.Spacing.md) {
-            HStack(spacing: FlareDesign.Spacing.md) {
-                Text("Server address (optional)")
-                    .font(.system(size: 14))
-                    .foregroundStyle(FlareDesign.textSecondary)
-                Spacer()
-                Menu {
-                    ForEach(LoginTransportMode.allCases) { mode in
-                        Button {
-                            transportMode.wrappedValue = mode
-                        } label: {
-                            Label(mode.title, systemImage: protocolIcon(for: mode))
-                        }
-                    }
-                } label: {
-                    HStack(spacing: FlareDesign.Spacing.sm) {
-                        Text(auth.loginDraft.transportMode.title)
-                            .font(FlareDesign.Typography.callout)
-                        Image(systemName: "chevron.down")
-                            .font(.caption.weight(.semibold))
-                    }
-                    .foregroundStyle(FlareDesign.textPrimary)
-                    .contentShape(Rectangle())
+    /// 服务器地址区:默认收起,点击展开 WebSocket / Gateway / QUIC URL。
+    @ViewBuilder
+    private var serverSection: some View {
+        VStack(alignment: .leading, spacing: FlareSizes.spacingLg) {
+            Button {
+                withAnimation(.easeOut(duration: 0.2)) { serverOpen.toggle() }
+            } label: {
+                HStack(spacing: FlareSizes.spacingSm) {
+                    Image(systemName: "server.rack")
+                        .font(.system(size: FlareSizes.fontSizeLg, weight: .medium))
+                        .foregroundStyle(c.textSecondary)
+                    Text("Server address")
+                        .font(.system(size: FlareSizes.fontSizeLg, weight: .medium))
+                        .foregroundStyle(c.textPrimary)
+                    Spacer()
+                    Image(systemName: "chevron.down")
+                        .font(.caption.weight(.semibold))
+                        .foregroundStyle(c.textTertiary)
+                        .rotationEffect(.degrees(serverOpen ? 180 : 0))
+                }
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+
+            if serverOpen {
+                FormFieldView(label: String(localized: "WebSocket URL")) {
+                    InputView(text: auth.draftBinding(\.wsUrl), placeholder: "ws://host:60051/ws")
+                }
+                FormFieldView(
+                    label: String(localized: "Gateway URL"),
+                    hint: String(localized: "The SDK issues and refreshes access tokens from this gateway")
+                ) {
+                    InputView(text: auth.draftBinding(\.httpUrl), placeholder: "http://host:50050")
+                }
+                FormFieldView(label: String(localized: "QUIC URL")) {
+                    InputView(text: auth.draftBinding(\.quicUrl), placeholder: "quic://host:60052")
                 }
             }
-
-            LoginInputField(
-                title: auth.loginDraft.visibleServerAddressLabel,
-                placeholder: auth.loginDraft.visibleServerAddressPlaceholder,
-                systemImage: protocolIcon(for: auth.loginDraft.transportMode),
-                text: auth.visibleServerAddress
-            )
-            .padding(.top, FlareDesign.Spacing.xxs)
-
-            if let label = auth.loginDraft.secondaryServerAddressLabel,
-               let placeholder = auth.loginDraft.secondaryServerAddressPlaceholder {
-                LoginInputField(
-                    title: label,
-                    placeholder: placeholder,
-                    systemImage: "antenna.radiowaves.left.and.right",
-                    text: auth.secondaryServerAddress
-                )
-                .padding(.top, FlareDesign.Spacing.xs)
-            }
-
-            // 两条路，优先级：填了 token 就直接用；否则用密钥按 user id 本地签发。
-            // 密钥做成**运行时输入**而不是打进安装包：打进去等于让任何拿到安装包的人
-            // 伪造任意用户身份。填在这里只落在本机，跟服务器地址一样。
-            // 此前这两项只在 Settings 里，登录页看不到——想"只输 user id 就登录"得先去翻设置。
-            LoginInputField(
-                title: String(localized: "Access token (optional)"),
-                placeholder: String(localized: "Leave empty and the SDK issues one from the gateway; paste a backend-issued token to use it as-is"),
-                systemImage: "key",
-                text: auth.draftBinding(\.tokenOverride)
-            )
-            .padding(.top, FlareDesign.Spacing.xs)
-            LoginInputField(
-                title: String(localized: "Gateway HTTP URL"),
-                placeholder: String(localized: "e.g. http://127.0.0.1:50050 — the SDK issues access tokens from it"),
-                systemImage: "network",
-                text: auth.draftBinding(\.httpUrl)
-            )
-            .padding(.top, FlareDesign.Spacing.xs)
         }
-    }
-
-    private func protocolIcon(for mode: LoginTransportMode) -> String {
-        switch mode {
-        case .websocket:
-            return "antenna.radiowaves.left.and.right"
-        case .quic:
-            return "bolt.horizontal.circle"
-        case .race:
-            return "arrow.triangle.branch"
-        }
+        .padding(FlareSizes.spacingLg)
+        .background(c.bgSecondary)
+        .clipShape(RoundedRectangle(cornerRadius: FlareSizes.radiusLg, style: .continuous))
+        .overlay(RoundedRectangle(cornerRadius: FlareSizes.radiusLg, style: .continuous).stroke(c.borderPrimary, lineWidth: 1))
     }
 }
 
 private struct LoginErrorBanner: View {
     let message: String
+    @Environment(\.colorScheme) private var scheme
+    private var c: FlareColors { FlareColors.of(scheme) }
 
     var body: some View {
-        HStack(alignment: .top, spacing: FlareDesign.Spacing.md) {
+        HStack(alignment: .top, spacing: FlareSizes.spacingMd) {
             Image(systemName: "exclamationmark.triangle.fill")
                 .font(.system(size: 17, weight: .semibold))
-                .foregroundStyle(FlareDesign.danger)
-                .padding(.top, FlareDesign.Spacing.xxs)
-            VStack(alignment: .leading, spacing: FlareDesign.Spacing.xs) {
-                Text("Sign-in failed")
-                    .font(.footnote.weight(.bold))
-                    .foregroundStyle(FlareDesign.textPrimary)
-                Text(message)
-                    .font(.caption)
-                    .foregroundStyle(FlareDesign.textSecondary)
-                    .lineLimit(3)
-                    .fixedSize(horizontal: false, vertical: true)
+                .foregroundStyle(c.error)
+                .padding(.top, FlareSizes.spacingXs)
+            VStack(alignment: .leading, spacing: FlareSizes.spacingXs) {
+                Text("Sign-in failed").font(.footnote.weight(.bold)).foregroundStyle(c.textPrimary)
+                Text(message).font(.caption).foregroundStyle(c.textSecondary)
+                    .lineLimit(3).fixedSize(horizontal: false, vertical: true)
             }
             Spacer(minLength: 0)
         }
-        .padding(.horizontal, FlareDesign.Spacing.md)
-        .padding(.vertical, FlareDesign.Spacing.md)
-        .background(FlareDesign.danger.opacity(0.11))
-        .clipShape(RoundedRectangle(cornerRadius: FlareDesign.radius, style: .continuous))
+        .padding(.horizontal, FlareSizes.spacingMd)
+        .padding(.vertical, FlareSizes.spacingMd)
+        .background(c.error.opacity(0.11))
+        .clipShape(RoundedRectangle(cornerRadius: FlareSizes.radiusLg, style: .continuous))
     }
 }
 
 private struct LoginGridBackground: View {
     var body: some View {
         GeometryReader { proxy in
-            ZStack {
-                Path { path in
-                    let step: CGFloat = 40
-                    var x: CGFloat = 0
-                    while x <= proxy.size.width {
-                        path.move(to: CGPoint(x: x, y: 0))
-                        path.addLine(to: CGPoint(x: x, y: proxy.size.height))
-                        x += step
-                    }
-
-                    var y: CGFloat = 0
-                    while y <= proxy.size.height {
-                        path.move(to: CGPoint(x: 0, y: y))
-                        path.addLine(to: CGPoint(x: proxy.size.width, y: y))
-                        y += step
-                    }
-                }
-                .stroke(.white.opacity(0.11), lineWidth: 1)
+            Path { path in
+                let step: CGFloat = LoginSpec.gridStep
+                var x: CGFloat = 0
+                while x <= proxy.size.width { path.move(to: CGPoint(x: x, y: 0)); path.addLine(to: CGPoint(x: x, y: proxy.size.height)); x += step }
+                var y: CGFloat = 0
+                while y <= proxy.size.height { path.move(to: CGPoint(x: 0, y: y)); path.addLine(to: CGPoint(x: proxy.size.width, y: y)); y += step }
             }
+            .stroke(.white.opacity(0.11), lineWidth: 1)
         }
         .allowsHitTesting(false)
-    }
-}
-
-private struct LoginInputField: View {
-    let title: String
-    let placeholder: String
-    let systemImage: String
-    @Binding var text: String
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: FlareDesign.Spacing.sm) {
-            Text(title)
-                .font(.system(size: 14, weight: .regular))
-                .foregroundStyle(FlareDesign.textPrimary)
-            HStack(spacing: FlareDesign.Spacing.md) {
-                Image(systemName: systemImage)
-                    .font(.system(size: 15, weight: .medium))
-                    .foregroundStyle(FlareDesign.textTertiary)
-                    .frame(width: 18)
-                TextField(placeholder, text: $text)
-                    .font(FlareDesign.Typography.body)
-                    .foregroundStyle(FlareDesign.textPrimary)
-                    .autocorrectionDisabled()
-            }
-            .padding(.horizontal, FlareDesign.Spacing.lg)
-            .frame(height: 48)
-            .background(Color(red: 0.95, green: 0.95, blue: 0.96))
-            .clipShape(Capsule())
-            .overlay(
-                Capsule()
-                    .stroke(Color.black.opacity(0.04), lineWidth: 1)
-            )
-        }
     }
 }

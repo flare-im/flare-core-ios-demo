@@ -153,7 +153,7 @@ final class SdkLabViewModel: ObservableObject {
                 let uid = currentUserId ?? "self"
                 try await client.user.upsertUserProfiles([
                     "profiles": AnySendable([
-                        ["userId": uid, "nickname": "SDK Lab 昵称", "avatarUrl": ""]
+                        ["userId": uid, "nickname": "SDK Lab nickname", "avatarUrl": ""]
                     ])
                 ])
                 appendLab(operation, status: "ok", detail: "upserted \(uid)")

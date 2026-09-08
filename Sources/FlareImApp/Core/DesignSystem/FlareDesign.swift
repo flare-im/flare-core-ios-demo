@@ -1,20 +1,27 @@
 import SwiftUI
+import FlareIMUI
 
+// FlareDesign 是 app 的设计门面,现已**委托给 kit 设计 token**
+// (FlareColors / FlareSizes,源自 flare-im-design/tokens/tokens.json),
+// 不再持有并行的硬编码色值/尺寸。调用点(FlareDesign.brand / .Spacing.lg 等)保持不变,
+// 值统一收敛到 kit,与三端一致。app 目前按 light 呈现,故色取 FlareColors.light。
 enum FlareDesign {
-    static let brand = Color(red: 0.49, green: 0.23, blue: 0.93)
-    static let brandSoft = Color(red: 0.95, green: 0.92, blue: 1.0)
-    static let accent = Color(red: 0.10, green: 0.46, blue: 0.82)
-    static let appBackground = Color(red: 0.96, green: 0.96, blue: 0.97)
-    static let surface = Color.white
-    static let surfaceAlt = Color(red: 0.95, green: 0.95, blue: 0.97)
-    static let textPrimary = Color(red: 0.07, green: 0.07, blue: 0.09)
-    static let textSecondary = Color(red: 0.42, green: 0.45, blue: 0.50)
-    static let textTertiary = Color(red: 0.64, green: 0.65, blue: 0.69)
-    static let success = Color(red: 0.13, green: 0.77, blue: 0.37)
-    static let warning = Color(red: 0.96, green: 0.62, blue: 0.04)
-    static let danger = Color(red: 0.94, green: 0.27, blue: 0.27)
-    static let incoming = Color(red: 0.93, green: 0.90, blue: 1.0)
-    static let outgoing = brand
+    private static let c = FlareColors.light
+
+    static let brand = c.primary
+    static let brandSoft = c.bgSelected
+    static let accent = c.info
+    static let appBackground = c.bgSecondary
+    static let surface = c.bgPrimary
+    static let surfaceAlt = c.bgTertiary
+    static let textPrimary = c.textPrimary
+    static let textSecondary = c.textSecondary
+    static let textTertiary = c.textTertiary
+    static let success = c.success
+    static let warning = c.warning
+    static let danger = c.error
+    static let incoming = c.bubbleOther
+    static let outgoing = c.bubbleSelf
     static let outgoingText = Color.white
     static let callBackground = Color(red: 0.07, green: 0.08, blue: 0.10)
 
@@ -24,24 +31,24 @@ enum FlareDesign {
     /// 向后兼容别名：等价于 `Radius.medium`。新代码直接用 `FlareDesign.Radius.*`。
     static let radius: CGFloat = Radius.medium
 
-    /// 圆角标尺（消除散落的 6–16 ad-hoc 取值，归并为 4 档；旧 9/10→medium、14→large）。
+    /// 圆角标尺，委托到 kit `FlareSizes`（sm6/md8/lg10/xl14/2xl18/full999）。
     enum Radius {
-        static let small: CGFloat = 6
-        static let medium: CGFloat = 8
-        static let large: CGFloat = 12
-        static let xl: CGFloat = 16
-        static let pill: CGFloat = 999
+        static let small = FlareSizes.radiusSm     // 6
+        static let medium = FlareSizes.radiusMd    // 8
+        static let large = FlareSizes.radiusLg     // 10
+        static let xl = FlareSizes.radiusXl        // 14
+        static let pill = FlareSizes.radiusFull    // 999
     }
 
-    /// 间距标尺（4pt 基准网格）。off-scale 取值按就近归并到这些档位。
+    /// 间距标尺（4pt 基准网格），委托到 kit `FlareSizes`。
     enum Spacing {
         static let xxs: CGFloat = 2
-        static let xs: CGFloat = 4
-        static let sm: CGFloat = 8
-        static let md: CGFloat = 12
-        static let lg: CGFloat = 16
-        static let xl: CGFloat = 20
-        static let xxl: CGFloat = 24
+        static let xs = FlareSizes.spacingXs       // 4
+        static let sm = FlareSizes.spacingSm       // 8
+        static let md = FlareSizes.spacingMd       // 12
+        static let lg = FlareSizes.spacingLg       // 16
+        static let xl = FlareSizes.spacingXl       // 20
+        static let xxl = FlareSizes.spacing2xl     // 24
     }
 
     /// 字体标尺。集中字号/字重，便于全局统一与无障碍缩放。

@@ -62,10 +62,10 @@ struct VoiceRecorderBar: View {
                     .clipShape(Circle())
 
                 VStack(alignment: .leading, spacing: 2) {
-                    Text(isCancelling ? "松手取消" : "松开发送")
+                    Text(isCancelling ? String(localized: "Release to cancel") : String(localized: "Release to send"))
                         .font(.subheadline.weight(.semibold))
                         .foregroundStyle(FlareDesign.textPrimary)
-                    Text(isCancelling ? "下滑恢复发送" : "上滑取消")
+                    Text(isCancelling ? String(localized: "Slide down to resume") : String(localized: "Slide up to cancel"))
                         .font(.caption)
                         .foregroundStyle(FlareDesign.textSecondary)
                 }
@@ -786,7 +786,7 @@ struct EmojiPanel: View {
 
     private var emojiSections: some View {
         VStack(alignment: .leading, spacing: FlareDesign.Spacing.md) {
-            Text("最常使用")
+            Text(String(localized: "Frequently used"))
                 .font(.caption.weight(.bold))
                 .foregroundStyle(FlareDesign.textSecondary)
 
@@ -796,7 +796,7 @@ struct EmojiPanel: View {
                 }
             }
 
-            Text("默认表情")
+            Text(String(localized: "Default emoji"))
                 .font(.caption.weight(.bold))
                 .foregroundStyle(FlareDesign.textSecondary)
                 .padding(.top, FlareDesign.Spacing.xxs)
@@ -811,7 +811,7 @@ struct EmojiPanel: View {
 
     private var stickerSection: some View {
         VStack(alignment: .leading, spacing: FlareDesign.Spacing.md) {
-            Text("头像贴纸")
+            Text(String(localized: "Avatar stickers"))
                 .font(.caption.weight(.bold))
                 .foregroundStyle(FlareDesign.textSecondary)
 
@@ -836,7 +836,7 @@ struct EmojiPanel: View {
                     .clipShape(Circle())
             }
             .buttonStyle(.plain)
-            .accessibilityLabel(Text("默认表情"))
+            .accessibilityLabel(Text(String(localized: "Default emoji")))
 
             ForEach(Array(stickers.prefix(2))) { sticker in
                 Button {
@@ -856,7 +856,7 @@ struct EmojiPanel: View {
                     .clipShape(RoundedRectangle(cornerRadius: FlareDesign.Radius.medium, style: .continuous))
                 }
                 .buttonStyle(.plain)
-                .accessibilityLabel(Text("头像贴纸"))
+                .accessibilityLabel(Text(String(localized: "Avatar stickers")))
             }
 
             Spacer(minLength: 0)

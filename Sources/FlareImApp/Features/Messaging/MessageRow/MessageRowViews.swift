@@ -147,7 +147,7 @@ struct MessagePreviewSheet: View {
                 }
 
                 VStack(alignment: .leading, spacing: FlareDesign.Spacing.sm) {
-                    Text("消息内容")
+                    Text(String(localized: "Message content"))
                         .font(.subheadline.weight(.bold))
                         .foregroundStyle(FlareDesign.textSecondary)
                     Text(message.previewText)
@@ -161,9 +161,9 @@ struct MessagePreviewSheet: View {
                 }
 
                 VStack(alignment: .leading, spacing: FlareDesign.Spacing.sm) {
-                    MessagePreviewMetaRow(title: "消息 ID", value: message.serverId.isEmpty ? message.clientMsgId : message.serverId)
-                    MessagePreviewMetaRow(title: "会话", value: message.conversationId)
-                    MessagePreviewMetaRow(title: "序号", value: message.seq == 0 ? "-" : String(message.seq))
+                    MessagePreviewMetaRow(title: String(localized: "Message ID"), value: message.serverId.isEmpty ? message.clientMsgId : message.serverId)
+                    MessagePreviewMetaRow(title: String(localized: "Conversation"), value: message.conversationId)
+                    MessagePreviewMetaRow(title: String(localized: "Seq"), value: message.seq == 0 ? "-" : String(message.seq))
                 }
                 .padding(FlareDesign.Spacing.md)
                 .background(FlareDesign.surface)
@@ -304,11 +304,11 @@ struct MessageActionSheet: View {
     private var expandedReactionPicker: some View {
         VStack(alignment: .leading, spacing: FlareDesign.Spacing.md) {
             HStack {
-                Text("选择表情")
+                Text(String(localized: "Pick an emoji"))
                     .font(.subheadline.weight(.bold))
                     .foregroundStyle(FlareDesign.textPrimary)
                 Spacer()
-                Button("收起") {
+                Button(String(localized: "Collapse")) {
                     reactionPickerExpanded = false
                 }
                 .font(.caption.weight(.bold))

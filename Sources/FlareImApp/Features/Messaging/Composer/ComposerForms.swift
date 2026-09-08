@@ -187,44 +187,44 @@ struct ComposerInputFormSheet: View {
     private var fields: some View {
         switch draft.kind {
         case .imageFallback:
-            inputField(String(localized: "Image caption"), placeholder: "例如：现场照片", text: $title)
+            inputField(String(localized: "Image caption"), placeholder: String(localized: "e.g. On-site photo"), text: $title)
         case .video:
             inputField(String(localized: "Video ID"), placeholder: "video-id", text: $title)
-            inputField(String(localized: "Description"), placeholder: "视频说明", text: $detail)
+            inputField(String(localized: "Description"), placeholder: String(localized: "Video caption"), text: $detail)
         case .location:
-            inputField(String(localized: "Place name"), placeholder: "例如：上海办公室", text: $title)
-            inputField(String(localized: "Address"), placeholder: "例如：世纪大道 100 号", text: $detail)
+            inputField(String(localized: "Place name"), placeholder: String(localized: "e.g. Shanghai office"), text: $title)
+            inputField(String(localized: "Address"), placeholder: String(localized: "e.g. 100 Century Ave"), text: $detail)
             inputField(String(localized: "Coordinates (optional)"), placeholder: "31.2304,121.4737", text: $extra)
         case .card:
-            inputField(String(localized: "Name"), placeholder: "名片标题", text: $title)
-            inputField(String(localized: "Description"), placeholder: "职位、部门或备注", text: $detail)
+            inputField(String(localized: "Name"), placeholder: String(localized: "Contact card title"), text: $title)
+            inputField(String(localized: "Description"), placeholder: String(localized: "Role, team, or note"), text: $detail)
             inputField(String(localized: "Business ID"), placeholder: "card-id", text: $extra)
         case .task:
-            inputField(String(localized: "Task title"), placeholder: "例如：确认 iOS 消息输入区", text: $title)
-            inputField(String(localized: "Participants"), placeholder: "多个 ID 用空格或逗号分隔", text: $participants)
+            inputField(String(localized: "Task title"), placeholder: String(localized: "e.g. Review the iOS composer"), text: $title)
+            inputField(String(localized: "Participants"), placeholder: String(localized: "Separate IDs with spaces or commas"), text: $participants)
         case .schedule:
-            inputField(String(localized: "Title / name"), placeholder: "例如：产品评审", text: $title)
+            inputField(String(localized: "Title / name"), placeholder: String(localized: "e.g. Product review"), text: $title)
             DatePicker("Start time", selection: $startDate, displayedComponents: [.date, .hourAndMinute])
                 .font(.subheadline)
             DatePicker("End time", selection: $endDate, displayedComponents: [.date, .hourAndMinute])
                 .font(.subheadline)
-            inputField(String(localized: "Venue"), placeholder: "会议室或线上地址", text: $detail)
-            inputField(String(localized: "Participants"), placeholder: "多个 ID 用空格或逗号分隔", text: $participants)
+            inputField(String(localized: "Venue"), placeholder: String(localized: "Room or online link"), text: $detail)
+            inputField(String(localized: "Participants"), placeholder: String(localized: "Separate IDs with spaces or commas"), text: $participants)
         case .poll:
-            inputField(String(localized: "Poll title"), placeholder: "例如：选择发布时间", text: $title)
-            multilineField(String(localized: "Options"), placeholder: "每行一个选项", text: $detail)
-            inputField(String(localized: "Participants"), placeholder: "可选，多个 ID 用空格或逗号分隔", text: $participants)
+            inputField(String(localized: "Poll title"), placeholder: String(localized: "e.g. Pick a release time"), text: $title)
+            multilineField(String(localized: "Options"), placeholder: String(localized: "One option per line"), text: $detail)
+            inputField(String(localized: "Participants"), placeholder: String(localized: "Optional — separate IDs with spaces or commas"), text: $participants)
         case .link:
             inputField(String(localized: "Link"), placeholder: "https://", text: $title)
-            inputField(String(localized: "Title"), placeholder: "卡片标题", text: $detail)
-            inputField(String(localized: "Description"), placeholder: "卡片摘要", text: $extra)
+            inputField(String(localized: "Title"), placeholder: String(localized: "Card title"), text: $detail)
+            inputField(String(localized: "Description"), placeholder: String(localized: "Card summary"), text: $extra)
         case .miniProgram:
             inputField(String(localized: "Mini program ID"), placeholder: "app-id", text: $title)
-            inputField(String(localized: "Title"), placeholder: "入口标题", text: $detail)
+            inputField(String(localized: "Title"), placeholder: String(localized: "Entry title"), text: $detail)
             inputField(String(localized: "Page path"), placeholder: "/pages/home", text: $extra)
         case .notification, .announcement:
-            inputField(String(localized: "Title"), placeholder: "请输入标题", text: $title)
-            multilineField(String(localized: "Body"), placeholder: "请输入正文", text: $detail)
+            inputField(String(localized: "Title"), placeholder: String(localized: "Enter a title"), text: $title)
+            multilineField(String(localized: "Body"), placeholder: String(localized: "Enter the body"), text: $detail)
         }
     }
 
@@ -233,17 +233,17 @@ struct ComposerInputFormSheet: View {
         case .imageFallback:
             return [
                 "imageId": "manual-image-\(UUID().uuidString)",
-                "description": trimmed(title, fallback: "图片")
+                "description": trimmed(title, fallback: String(localized: "Image"))
             ]
         case .video:
             return [
                 "videoId": trimmed(title, fallback: "ios-video-\(UUID().uuidString)"),
-                "description": trimmed(detail, fallback: "视频")
+                "description": trimmed(detail, fallback: String(localized: "Video"))
             ]
         case .location:
             let coordinate = parseCoordinate(extra)
             return [
-                "title": trimmed(title, fallback: "位置"),
+                "title": trimmed(title, fallback: String(localized: "Location")),
                 "address": trimmed(detail, fallback: title),
                 "latitude": coordinate?.latitude ?? 31.2304,
                 "longitude": coordinate?.longitude ?? 121.4737
@@ -251,17 +251,17 @@ struct ComposerInputFormSheet: View {
         case .card:
             return [
                 "id": trimmed(extra, fallback: "card-\(UUID().uuidString)"),
-                "title": trimmed(title, fallback: "名片"),
+                "title": trimmed(title, fallback: String(localized: "Contact")),
                 "subtitle": trimmed(detail, fallback: currentUserId ?? "")
             ]
         case .task:
             return [
-                "title": trimmed(title, fallback: "任务"),
+                "title": trimmed(title, fallback: String(localized: "Task")),
                 "participantUserIds": participants
             ]
         case .schedule:
             let location = detail.trimmingCharacters(in: .whitespacesAndNewlines)
-            let displayTitle = location.isEmpty ? trimmed(title, fallback: "日程") : "\(trimmed(title, fallback: "日程")) · \(location)"
+            let displayTitle = location.isEmpty ? trimmed(title, fallback: String(localized: "Schedule")) : "\(trimmed(title, fallback: String(localized: "Schedule"))) · \(location)"
             return [
                 "title": displayTitle,
                 "startTimeMs": Int(startDate.timeIntervalSince1970 * 1000),
@@ -270,7 +270,7 @@ struct ComposerInputFormSheet: View {
             ]
         case .poll:
             return [
-                "title": trimmed(title, fallback: "投票"),
+                "title": trimmed(title, fallback: String(localized: "Vote")),
                 "options": optionList,
                 "participantUserIds": participants
             ]
@@ -283,17 +283,17 @@ struct ComposerInputFormSheet: View {
         case .miniProgram:
             return [
                 "appId": trimmed(title, fallback: "flare-mini"),
-                "title": trimmed(detail, fallback: "小程序"),
+                "title": trimmed(detail, fallback: String(localized: "Mini program")),
                 "pagePath": trimmed(extra, fallback: "/")
             ]
         case .notification:
             return [
-                "title": trimmed(title, fallback: "通知"),
+                "title": trimmed(title, fallback: String(localized: "Notice")),
                 "body": trimmed(detail, fallback: "")
             ]
         case .announcement:
             return [
-                "title": trimmed(title, fallback: "公告"),
+                "title": trimmed(title, fallback: String(localized: "Announcement")),
                 "body": trimmed(detail, fallback: "")
             ]
         }

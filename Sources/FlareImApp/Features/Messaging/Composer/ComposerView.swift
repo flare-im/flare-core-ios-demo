@@ -399,7 +399,7 @@ struct ComposerView: View {
         case .miniProgram:
             formDraft = ComposerFormDraft(kind: .miniProgram)
         case .topic:
-            text = text.isEmpty ? "#话题 " : "\(text) #话题 "
+            text = text.isEmpty ? String(localized: "#topic ") : "\(text) \(String(localized: "#topic "))"
         case .notification:
             formDraft = ComposerFormDraft(kind: .notification)
         case .announcement:

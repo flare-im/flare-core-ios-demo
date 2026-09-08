@@ -155,29 +155,10 @@ struct ConversationListView: View {
             .buttonStyle(.plain)
             .accessibilityLabel("More conversation filters")
 
-            HStack(spacing: 0) {
-                ForEach(availableFilters) { filter in
-                    Button {
-                        environment.filter = filter
-                        Task { await messaging.refreshConversations() }
-                    } label: {
-                        Text(filterTitle(for: filter))
-                            .font(.subheadline.weight(.semibold))
-                            .foregroundStyle(filter == environment.filter ? FlareDesign.brand : FlareDesign.textSecondary)
-                            .frame(maxWidth: .infinity)
-                            .frame(height: 38)
-                            .background(
-                                Capsule()
-                                    .fill(filter == environment.filter ? FlareDesign.surface : Color.clear)
-                                    .shadow(color: filter == environment.filter ? Color.black.opacity(0.05) : Color.clear, radius: 8, x: 0, y: 2)
-                            )
-                    }
-                    .buttonStyle(.plain)
-                }
-            }
-            .padding(3)
-            .background(FlareDesign.surfaceAlt)
-            .clipShape(Capsule())
+            FilterTabsView(
+                options: availableFilters.map { FlareFilterTabOption(value: $0.id, label: filterTitle(for: $0)) },
+                selection: filterSelectionBinding
+            )
         }
         .padding(.horizontal, FlareDesign.Spacing.lg)
         .padding(.bottom, FlareDesign.Spacing.md)
@@ -186,32 +167,32 @@ struct ConversationListView: View {
 
     @ViewBuilder
     private var content: some View {
-        if filtered.isEmpty {
-            EmptyConversationState(
-                title: searchText.isEmpty ? String(localized: "No conversations") : String(localized: "No matching conversations"),
-                message: searchText.isEmpty ? String(localized: "Tap the plus button to open a conversation") : String(localized: "Try a different keyword"),
-                actionTitle: String(localized: "Start a conversation"),
-                action: { startSheetOpen = true }
+        // 容器收敛到 kit 的 host-rows 变体：统一空态/加载 + 懒滚动外壳，
+        // 每行仍由 app 构建 ConversationCard（保留 contextMenu/滑动/点击附能）。
+        FlareIMUI.ConversationListContainer(
+            items: displayedConversations,
+            contentInsets: EdgeInsets(
+                top: FlareDesign.Spacing.sm, leading: 0, bottom: 28, trailing: 0
             )
-        } else {
-            ScrollView {
-                LazyVStack(alignment: .leading, spacing: 0) {
-                    ForEach(displayedConversations) { conversation in
-                        ConversationCard(
-                            conversation: conversation,
-                            onOpen: { open(conversation) },
-                            onActions: { actionConversation = conversation }
-                        )
-                            .contextMenu { conversationMenu(conversation) }
-                        Divider()
-                            .padding(.leading, 82)
-                    }
-                }
-                .padding(.top, FlareDesign.Spacing.sm)
-                .padding(.bottom, 28)
-            }
-            .background(FlareDesign.surface)
+        ) {
+            FlareIMUI.EmptyStateView(
+                title: searchText.isEmpty ? String(localized: "No conversations") : String(localized: "No matching conversations"),
+                description: searchText.isEmpty ? String(localized: "Tap the plus button to open a conversation") : String(localized: "Try a different keyword"),
+                actionText: String(localized: "Start a conversation"),
+                systemImage: "bubble.left.and.bubble.right",
+                onAction: { startSheetOpen = true }
+            )
+        } row: { conversation in
+            ConversationCard(
+                conversation: conversation,
+                onOpen: { open(conversation) },
+                onActions: { actionConversation = conversation }
+            )
+                .contextMenu { conversationMenu(conversation) }
+            Divider()
+                .padding(.leading, 82)
         }
+        .background(FlareDesign.surface)
     }
 
     private var pinnedCount: Int {
@@ -220,11 +201,11 @@ struct ConversationListView: View {
 
     private var connectionLabel: String {
         switch messaging.runtimeStatus {
-        case .ready: return "ready"
-        case .loading: return "connecting"
-        case .offline: return "offline"
-        case .error, .unavailable: return "attention"
-        case .idle: return "idle"
+        case .ready: return String(localized: "ready")
+        case .loading: return String(localized: "connecting")
+        case .offline: return String(localized: "offline")
+        case .error, .unavailable: return String(localized: "attention")
+        case .idle: return String(localized: "idle")
         }
     }
 
@@ -240,6 +221,18 @@ struct ConversationListView: View {
         case .offline, .idle: return FlareDesign.textTertiary
         case .error, .unavailable: return FlareDesign.danger
         }
+    }
+
+    private var filterSelectionBinding: Binding<String> {
+        Binding(
+            get: { environment.filter.id },
+            set: { value in
+                guard let filter = availableFilters.first(where: { $0.id == value })
+                    ?? ConversationFilter.allCases.first(where: { $0.id == value }) else { return }
+                environment.filter = filter
+                Task { await messaging.refreshConversations() }
+            }
+        )
     }
 
     private func filterTitle(for filter: ConversationFilter) -> String {
@@ -374,7 +367,7 @@ private struct ConversationCard: View {
     private var rowTags: [FlareIMUI.ConversationRowTag] {
         var tags: [FlareIMUI.ConversationRowTag] = []
         if conversation.conversationType == .group {
-            tags.append(FlareIMUI.ConversationRowTag(text: "Group", tone: .info))
+            tags.append(FlareIMUI.ConversationRowTag(text: String(localized: "Group"), tone: .info))
         }
         if let roleTag {
             tags.append(FlareIMUI.ConversationRowTag(text: roleTag, tone: .warning))
@@ -396,10 +389,10 @@ private struct ConversationCard: View {
         }
         let lower = role.lowercased()
         if lower.contains("bot") || lower.contains("robot") {
-            return "Bot"
+            return String(localized: "Bot")
         }
         if lower.contains("official") {
-            return "Official"
+            return String(localized: "Official")
         }
         return role.prefix(10).description
     }
@@ -484,25 +477,25 @@ private struct ConversationActionSheet: View {
 
     private var quickActions: some View {
         HStack(spacing: FlareDesign.Spacing.sm) {
-            ConversationQuickAction(symbol: "arrow.right", title: "Open", tint: FlareDesign.brand) {
+            ConversationQuickAction(symbol: "arrow.right", title: String(localized: "Open"), tint: FlareDesign.brand) {
                 dismiss()
                 onOpen()
             }
             ConversationQuickAction(
                 symbol: conversation.isPinned ? "pin.slash" : "pin",
-                title: conversation.isPinned ? "Unpin" : "Pin",
+                title: conversation.isPinned ? String(localized: "Unpin") : String(localized: "Pin"),
                 tint: FlareDesign.brand
             ) {
                 run("pin")
             }
             ConversationQuickAction(
                 symbol: conversation.isMuted ? "bell" : "bell.slash",
-                title: conversation.isMuted ? "Unmute" : "Mute",
+                title: conversation.isMuted ? String(localized: "Unmute") : String(localized: "Mute"),
                 tint: FlareDesign.textSecondary
             ) {
                 run("mute")
             }
-            ConversationQuickAction(symbol: "mail.badge", title: "Unread", tint: FlareDesign.brand) {
+            ConversationQuickAction(symbol: "mail.badge", title: String(localized: "Unread"), tint: FlareDesign.brand) {
                 run("unread")
             }
         }
@@ -513,7 +506,7 @@ private struct ConversationActionSheet: View {
         VStack(spacing: 0) {
             ConversationActionRow(
                 symbol: conversation.isArchived ? "archivebox" : "archivebox.fill",
-                title: conversation.isArchived ? "Unarchive" : "Archive",
+                title: conversation.isArchived ? String(localized: "Unarchive") : String(localized: "Archive"),
                 tint: FlareDesign.textSecondary
             ) {
                 run("archive")
@@ -529,12 +522,12 @@ private struct ConversationActionSheet: View {
 
     private var dangerGroup: some View {
         VStack(spacing: 0) {
-            ConversationActionRow(symbol: "eraser", title: "Clear local history", tint: FlareDesign.danger, isDestructive: true) {
+            ConversationActionRow(symbol: "eraser", title: String(localized: "Clear local history"), tint: FlareDesign.danger, isDestructive: true) {
                 run("clear")
             }
             Divider()
                 .padding(.leading, 58)
-            ConversationActionRow(symbol: "trash", title: "Delete conversation", tint: FlareDesign.danger, isDestructive: true) {
+            ConversationActionRow(symbol: "trash", title: String(localized: "Delete conversation"), tint: FlareDesign.danger, isDestructive: true) {
                 run("delete")
             }
         }
@@ -630,34 +623,6 @@ struct AvatarView: View {
     }
 }
 
-private struct EmptyConversationState: View {
-    let title: String
-    let message: String
-    let actionTitle: String
-    let action: () -> Void
-
-    var body: some View {
-        VStack(spacing: FlareDesign.Spacing.md) {
-            Spacer(minLength: 92)
-            Image(systemName: "bubble.left.and.bubble.right")
-                .font(.system(size: 52, weight: .medium))
-                .foregroundStyle(FlareDesign.textTertiary)
-            Text(title)
-                .font(.headline.weight(.bold))
-                .foregroundStyle(FlareDesign.textPrimary)
-            Text(message)
-                .font(.footnote)
-                .foregroundStyle(FlareDesign.textTertiary)
-            Button(actionTitle, action: action)
-                .font(.footnote.weight(.bold))
-                .buttonStyle(.borderedProminent)
-                .tint(FlareDesign.brand)
-            Spacer()
-        }
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .background(FlareDesign.surface)
-    }
-}
 
 private struct StartConversationSheet: View {
     @Environment(\.dismiss) private var dismiss
@@ -690,15 +655,12 @@ private struct StartConversationSheet: View {
 
             VStack(alignment: .leading, spacing: FlareDesign.Spacing.lg) {
                 VStack(alignment: .leading, spacing: FlareDesign.Spacing.sm) {
-                    Text(kind == .single ? "Peer ID" : "Member IDs")
-                        .font(.caption.weight(.bold))
-                        .foregroundStyle(FlareDesign.brand)
-                    if kind == .single {
-                        TextField("Enter the peer's real userId", text: $peerUserId)
-                            .textFieldStyle(.roundedBorder)
-                    } else {
-                        TextField("Enter member userIds separated by commas", text: $groupUserIds)
-                            .textFieldStyle(.roundedBorder)
+                    FormFieldView(label: kind == .single ? String(localized: "Peer ID") : String(localized: "Member IDs")) {
+                        if kind == .single {
+                            InputView(text: $peerUserId, placeholder: String(localized: "Enter the peer's real userId"))
+                        } else {
+                            InputView(text: $groupUserIds, placeholder: String(localized: "Enter member userIds separated by commas"))
+                        }
                     }
                     Text(kind == .single ? "The conversation ID is generated automatically by the SDK via getOneConversation" : "The group conversation is generated automatically by the SDK via getGroupConversationByUserIds")
                         .font(.caption)
@@ -706,15 +668,13 @@ private struct StartConversationSheet: View {
                 }
 
                 VStack(alignment: .leading, spacing: FlareDesign.Spacing.sm) {
-                    Text("Conversation type")
-                        .font(.caption.weight(.bold))
-                        .foregroundStyle(FlareDesign.brand)
-                    Picker("Conversation type", selection: $kind) {
-                        ForEach(StartConversationKind.allCases) { item in
-                            Text(item.title).tag(item)
-                        }
+                    FormFieldView(label: String(localized: "Conversation type")) {
+                        SegmentedControlView(
+                            options: StartConversationKind.allCases.map(\.title),
+                            selectedIndex: StartConversationKind.allCases.firstIndex(of: kind) ?? 0,
+                            onSelect: { i in kind = StartConversationKind.allCases[i] }
+                        )
                     }
-                    .pickerStyle(.segmented)
                 }
             }
             .padding(.horizontal, FlareDesign.Spacing.xl)
@@ -996,19 +956,19 @@ struct ConversationDetailsPanel: View {
                 actionGrid
 
                 KeyValueRows(values: [
-                    ("Type", conversation.conversationType.rawValue),
-                    ("Channel", conversation.channelId),
-                    ("Members", "\(conversation.membersCount)"),
-                    ("Unread", "\(conversation.unreadCount)"),
-                    ("Mention count", "\(conversation.mentionCount)"),
-                    ("Pinned", String(conversation.isPinned)),
-                    ("Muted", String(conversation.isMuted)),
-                    ("Archived", String(conversation.isArchived)),
-                    ("Draft", conversation.draft ?? ""),
-                    ("Role", conversation.role ?? ""),
-                    ("Version", "\(conversation.version)"),
-                    ("Last read seq", "\(conversation.lastReadSeq)"),
-                    ("Max seq", "\(conversation.maxSeq)")
+                    (String(localized: "Type"), conversation.conversationType.rawValue),
+                    (String(localized: "Channel"), conversation.channelId),
+                    (String(localized: "Members"), "\(conversation.membersCount)"),
+                    (String(localized: "Unread"), "\(conversation.unreadCount)"),
+                    (String(localized: "Mention count"), "\(conversation.mentionCount)"),
+                    (String(localized: "Pinned"), String(conversation.isPinned)),
+                    (String(localized: "Muted"), String(conversation.isMuted)),
+                    (String(localized: "Archived"), String(conversation.isArchived)),
+                    (String(localized: "Draft"), conversation.draft ?? ""),
+                    (String(localized: "Role"), conversation.role ?? ""),
+                    (String(localized: "Version"), "\(conversation.version)"),
+                    (String(localized: "Last read seq"), "\(conversation.lastReadSeq)"),
+                    (String(localized: "Max seq"), "\(conversation.maxSeq)")
                 ])
                 .padding(FlareDesign.Spacing.md)
                 .flarePanel()

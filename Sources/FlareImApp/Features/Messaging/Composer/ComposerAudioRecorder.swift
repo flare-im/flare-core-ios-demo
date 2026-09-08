@@ -81,7 +81,7 @@ final class ComposerAudioRecorder: ObservableObject {
         let values = try currentURL.resourceValues(forKeys: [.fileSizeKey])
         var payload: [String: Any] = [
             "audioId": currentId,
-            "description": "语音消息",
+            "description": String(localized: "Voice message"),
             "localPath": currentURL.path,
             "sourceUrl": currentURL.absoluteString,
             "mimeType": "audio/mp4",

@@ -142,35 +142,35 @@ struct MessageMenuModel: Equatable, Sendable {
     static func item(_ key: MessageMenuActionKey) -> MessageMenuActionItem {
         switch key {
         case .reply:
-            return .init(key: key, title: "回复", symbol: "arrowshape.turn.up.left", isDestructive: false)
+            return .init(key: key, title: String(localized: "Reply"), symbol: "arrowshape.turn.up.left", isDestructive: false)
         case .forward:
-            return .init(key: key, title: "转发", symbol: "arrowshape.turn.up.right", isDestructive: false)
+            return .init(key: key, title: String(localized: "Forward"), symbol: "arrowshape.turn.up.right", isDestructive: false)
         case .recall:
-            return .init(key: key, title: "撤回", symbol: "arrow.uturn.backward", isDestructive: true)
+            return .init(key: key, title: String(localized: "Recall"), symbol: "arrow.uturn.backward", isDestructive: true)
         case .resend:
-            return .init(key: key, title: "重新发送", symbol: "arrow.clockwise", isDestructive: false)
+            return .init(key: key, title: String(localized: "Resend"), symbol: "arrow.clockwise", isDestructive: false)
         case .multiSelect:
-            return .init(key: key, title: "多选", symbol: "list.bullet", isDestructive: false)
+            return .init(key: key, title: String(localized: "Select"), symbol: "list.bullet", isDestructive: false)
         case .mark:
-            return .init(key: key, title: "标记", symbol: "flag", isDestructive: false)
+            return .init(key: key, title: String(localized: "Flag"), symbol: "flag", isDestructive: false)
         case .pin:
-            return .init(key: key, title: "置顶消息", symbol: "pin", isDestructive: false)
+            return .init(key: key, title: String(localized: "Pin message"), symbol: "pin", isDestructive: false)
         case .pinSelf:
-            return .init(key: key, title: "仅自己置顶", symbol: "pin.fill", isDestructive: false)
+            return .init(key: key, title: String(localized: "Pin for me"), symbol: "pin.fill", isDestructive: false)
         case .unpin:
-            return .init(key: key, title: "取消置顶", symbol: "pin.slash", isDestructive: false)
+            return .init(key: key, title: String(localized: "Unpin"), symbol: "pin.slash", isDestructive: false)
         case .copy:
-            return .init(key: key, title: "复制", symbol: "doc.on.doc", isDestructive: false)
+            return .init(key: key, title: String(localized: "Copy"), symbol: "doc.on.doc", isDestructive: false)
         case .preview:
-            return .init(key: key, title: "预览", symbol: "eye", isDestructive: false)
+            return .init(key: key, title: String(localized: "Preview"), symbol: "eye", isDestructive: false)
         case .edit:
-            return .init(key: key, title: "编辑文本", symbol: "square.and.pencil", isDestructive: false)
+            return .init(key: key, title: String(localized: "Edit text"), symbol: "square.and.pencil", isDestructive: false)
         case .editRich:
-            return .init(key: key, title: "编辑富文本", symbol: "doc.richtext", isDestructive: false)
+            return .init(key: key, title: String(localized: "Edit rich text"), symbol: "doc.richtext", isDestructive: false)
         case .delete:
-            return .init(key: key, title: "删除", symbol: "trash", isDestructive: true)
+            return .init(key: key, title: String(localized: "Delete"), symbol: "trash", isDestructive: true)
         case .save:
-            return .init(key: key, title: "保存到文件", symbol: "square.and.arrow.down", isDestructive: false)
+            return .init(key: key, title: String(localized: "Save to file"), symbol: "square.and.arrow.down", isDestructive: false)
         }
     }
 }
