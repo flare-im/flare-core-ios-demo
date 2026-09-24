@@ -1,7 +1,7 @@
 import XCTest
 @testable import FlareImApp
 
-/// iOS 的动作可用性必须与**核心** `domain::message_actions` 逐位一致。
+/// iOS 的送达状态必须与**核心**逐位一致。动作可用性不用对：iOS 直接问核心要答案。
 ///
 /// 向量由核心生成（`cargo test action_availability_vectors`）；
 /// 规则一改这里就红，逼你回来看 iOS 是否要跟着改。
@@ -20,19 +20,14 @@ final class MessageActionVectorsTests: XCTestCase {
             let isFailed: Bool
             let isRead: Bool
         }
-        struct Expected: Decodable {
-            let canReply, canForward, canCopy, canEdit, canDelete, canRecall: Bool
-            let canPin, canUnpin, canReact, canMultiSelect, canSave, canResend: Bool
-        }
         let label: String
         let input: Input
-        let expected: Expected
         let deliveryState: String
     }
 
     private struct Vectors: Decodable { let cases: [Vector] }
 
-    func testAvailabilityMatchesCoreVectors() throws {
+    func testDeliveryStateMatchesCoreVectors() throws {
         let root = URL(fileURLWithPath: #filePath)
             .deletingLastPathComponent()   // FlareImAppTests
             .deletingLastPathComponent()   // Tests
@@ -49,30 +44,7 @@ final class MessageActionVectorsTests: XCTestCase {
         )
 
         for vector in vectors.cases {
-            let actual = MessageActions.availability(
-                MessageActionInput(
-                    isSelf: vector.input.isSelf,
-                    messageType: vector.input.messageType,
-                    status: vector.input.status,
-                    hasText: vector.input.hasText,
-                    isPending: vector.input.isPending,
-                    isPinned: vector.input.isPinned,
-                    isConnected: vector.input.isConnected,
-                    multiSelectMode: vector.input.multiSelectMode,
-                    isFailed: vector.input.isFailed
-                )
-            )
-            let e = vector.expected
-            let expected = MessageActionAvailability(
-                canReply: e.canReply, canForward: e.canForward, canCopy: e.canCopy,
-                canEdit: e.canEdit, canDelete: e.canDelete, canRecall: e.canRecall,
-                canPin: e.canPin, canUnpin: e.canUnpin, canReact: e.canReact,
-                canMultiSelect: e.canMultiSelect, canSave: e.canSave, canResend: e.canResend
-            )
-            XCTAssertEqual(actual, expected, "与核心不一致：\(vector.label)")
-
-            // 送达状态同样对齐核心：iOS 的 deliveryState 派生逻辑见 MessageRowViews。
-            let delivery = MessageActions.deliveryState(
+            let delivery = MessageDelivery.state(
                 isSelf: vector.input.isSelf,
                 status: vector.input.status,
                 isRead: vector.input.isRead,

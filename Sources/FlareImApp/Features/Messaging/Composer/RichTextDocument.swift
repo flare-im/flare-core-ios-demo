@@ -3,6 +3,10 @@ import Foundation
 import UIKit
 #endif
 
+enum RichTextShortcut: String, CaseIterable {
+    case heading, bold, italic, strike, quote, bulletList, orderedList, codeBlock, inlineCode, link, image, mention
+}
+
 enum RichTextInlineStyle: String, CaseIterable, Hashable {
     case bold
     case italic

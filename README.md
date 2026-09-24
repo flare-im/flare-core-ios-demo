@@ -1,56 +1,79 @@
-# flare-core-ios-app
+# Flare Core iOS Reference App
 
-`flare-core-apple-sdk` 的生产级 iOS IM 应用模板，采用 **feature-first MVVM** 架构。
+## What This Demonstrates
 
-## 目录结构
+An official Flare design consumer under active canonical UI migration.
+Swift 6, SwiftUI, SwiftPM and the Apple SDK (iOS 16+; macOS package host).
 
-```text
-Sources/FlareImApp/
-├── App/              # 入口 + 组合根/协调器(FlareImApp、FlareAppStore)
-├── Core/             # 跨特性共享层(映射 SDK 的协议化模块)
-│   ├── Sdk/          #   SdkClientFactory —— client 创建 DI 缝(可注入 mock)
-│   ├── Session/      #   AppSession —— 生命周期/认证/连接/事件(唯一持 client)
-│   ├── Data/         #   ViewDataRepository —— 会话/消息 + view-delta 引擎
-│   ├── Environment/  #   AppEnvironment —— UI/导航 + 共享 loginDraft + run()/Lab 操作基建
-│   ├── Domain/       #   AppModels、AppSdkModels、SdkModelMapper
-│   └── DesignSystem/ #   FlareDesign、FlareFormatters、CommonViews
-└── Features/         # 每特性 View + ViewModel 同处
-    ├── Auth/         #   LoginView
-    ├── Messaging/    #   ConversationListView + ChatView + MessagingViewModel(列表与聊天合一)
-    ├── Search/       #   SearchView + SearchViewModel
-    ├── Settings/     #   SettingsView
-    ├── SdkLab/       #   SdkLabView + SdkLabViewModel(诊断/媒体/能力 三子 Lab)
-    └── Shell/        #   RootWorkbenchView
-FFI/                  # Rust FFI 产物(gitignored,scripts/sync_ffi.sh 同步)
-scripts/              # sync_ffi.sh
-Tests/                # FlareImAppTests
-```
+## Architecture
 
-**架构**：`View → ViewModel → {AppSession, ViewDataRepository, AppEnvironment} → SDK 协议门面 → FFI`。
-ViewModel 经 `environmentObject` 注入;协调器 `FlareAppStore` 装配 Core + 各特性 VM 并持登录/登出/释放编排。
-DI 缝(`SdkClientFactory`)让 ViewModel 可注入 mock `FlareImClientProtocol` 单测。参考实现：`flare-core-flutter-app`。
+`AppSession` owns `FlareImClientProtocol`. `ViewDataRepository`, feature
+view models and SDK mappers handle session/events, paging, commands, media
+resolution and capability decisions. SwiftUI owns native navigation and sheets.
 
-## 运行
+## flare-im-design Package Used
 
-> 前置：工作区已构建 Rust FFI 产物到 `native/artifacts/`（host `.dylib` + iOS `.a` 切片）。
+`FlareIMUI` from the relative workspace package at `2.0.0-rc.1`.
+
+Public `IMAppKitView`, `ConversationHeaderView`, `MessageBubbleView`,
+`ComposerView` and `ImagePreviewView` are integrated. The local chat header and
+action-overlay backdrop are removed; native sheet presentation is retained.
+Local message action content, menu/panel modifiers and composer forms still
+need canonical library integration.
+
+## SDK Adapter
+
+SDK authentication, persistence, event subscriptions, lifecycle transitions,
+retry and media transfer stay in the SDK/application layer. Public kit data
+contracts and intents form the visual boundary; do not import private renderers.
+
+## Run
 
 ```bash
-# 1. 同步 FFI 产物到 FFI/
 bash scripts/sync_ffi.sh
-
-# 2a. iOS 模拟器（推荐）—— 用 xcodegen 生成 app 工程并运行
-xcodegen generate                                          # 需 `brew install xcodegen`
-xcodebuild -project FlareImApp.xcodeproj -scheme FlareImExampleApp \
-  -destination 'platform=iOS Simulator,name=iPhone 17' -derivedDataPath .build-xcode build
-xcrun simctl boot 'iPhone 17' || true
-xcrun simctl install booted .build-xcode/Build/Products/Debug-iphonesimulator/FlareImExampleApp.app
-xcrun simctl launch booted com.flare.im.example.app
-
-# 2b. macOS 宿主 —— 无界面验证 FFI 链路
-FLARE_FFI_DYLIB="$PWD/FFI/libflare_im_core_sdk_ffi.dylib" swift test
+swift build
+swift test
+xcodegen generate
+xcodebuild -project FlareImApp.xcodeproj -scheme FlareImExampleApp -destination 'platform=iOS Simulator,name=iPhone 17 Pro' build
 ```
 
-要点：
-- iOS 经 **静态 `.a` + `dlopen(nil)`** 解析 C-ABI 符号，工程已在 `project.yml` 配 **`-force_load` + `-export_dynamic`**（否则链接期死剥 / `dlsym` 找不到符号）。
-- `project.yml` 是工程的**源**（提交）；`FlareImApp.xcodeproj` / `.build-xcode` 为生成物（已 gitignore）。
-- 需 Swift 6.x 工具链（Xcode 16+；`FlareNativeBindings` 的 C 函数 binding 已修 `@convention(c)`，适配 Swift 6.3）。
+## Demo Mode
+
+The runnable app uses the real SDK. There is no automatic fake-data fallback.
+Unit/widget fixtures are test inputs, not a supported product demo mode. Shared
+scenario-driven offline data and complete five-platform feature parity remain
+tracked in [the migration report](../CANONICAL_UI_MIGRATION_REPORT.md).
+
+## Real SDK Mode
+
+Enter a test user ID and the WebSocket and HTTP gateway endpoints on the login
+screen. Credentials are issued by the configured gateway; do not put signing
+keys in UI code. Use isolated test accounts for destructive or send workflows.
+
+## Supported Features
+
+Conversation/message flows are the Core scope: session initialization, list,
+opening a conversation, timeline, composer, send/retry, message actions, search,
+media and SDK diagnostics. Integration and canonical-renderer coverage differ by
+platform; see the [feature matrix and remaining gaps](../CANONICAL_UI_MIGRATION_REPORT.md).
+Contact-directory, group-directory and relationship navigation require a Social
+adapter. Group conversations are messaging targets, not group administration.
+
+## Platform-Specific Integration
+
+NavigationStack, sheet/fullScreenCover, file/photo pickers, microphone
+permissions, sharing and FFI artifact loading stay native. Xcode selects the
+static library by SDK and architecture: `aarch64-apple-ios` for arm64 devices,
+`aarch64-apple-ios-sim` for arm64 simulators and `x86_64-apple-ios` for Intel
+simulators. All three synced slices are required for generic iOS builds.
+
+## Migration Status
+
+Swift tests: 53 executed, 6 environment-gated skipped, zero failures. An iPhone
+17 Pro simulator build succeeds with signing disabled. This is compilation,
+not completed VoiceOver or device interaction testing. Local surfaces and
+six-brand/theme integration remain incomplete.
+
+The [migration report](../CANONICAL_UI_MIGRATION_REPORT.md) records the current
+feature matrix, test evidence and outstanding P1/P2 work. Reusable UI fixes
+belong in the design kit, not in local visual overrides.

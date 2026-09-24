@@ -1,3 +1,4 @@
+import FlareIMUI
 import FlareCoreAppleSDK
 import SwiftUI
 
@@ -73,7 +74,6 @@ private struct DiagnosticsLab: View {
             }
             KeyValueRows(values: sdkLab.diagnostics.sorted(by: { $0.key < $1.key }).map { ($0.key, $0.value) })
                 .padding(FlareDesign.Spacing.md)
-                .flarePanel()
             HStack {
                 Button("Current presence") { Task { await sdkLab.runLabOperation("presence.current") } }
                 Button("Batch presence + subscribe") { Task { await sdkLab.runLabOperation("presence.batch_subscribe") } }
@@ -160,7 +160,7 @@ private struct MessageLab: View {
             .buttonStyle(.bordered)
 
             if sdkLab.builderCatalog.isEmpty {
-                EmptyStateView(title: "No builder catalog loaded", message: "Refresh the catalog after login to inspect generated build operations.", symbol: "list.bullet.rectangle")
+                FlareIMUI.EmptyStateView(title: "No builder catalog loaded", description: "Refresh the catalog after login to inspect generated build operations.", icon: "file").frame(maxWidth: .infinity, maxHeight: .infinity)
                     .frame(minHeight: 220)
             } else {
                 VStack(alignment: .leading, spacing: FlareDesign.Spacing.sm) {
@@ -180,7 +180,6 @@ private struct MessageLab: View {
                             Pill(text: entry.stability, color: entry.stability == "stable" ? FlareDesign.success : FlareDesign.warning)
                         }
                         .padding(FlareDesign.Spacing.md)
-                        .flarePanel()
                     }
                 }
             }
@@ -228,6 +227,8 @@ private struct MediaLab: View {
             }
             .buttonStyle(.bordered)
         }
+        // Every field here takes an id, a path or a number.
+        .identifierInput()
     }
 }
 
@@ -266,8 +267,9 @@ private struct CapabilityLab: View {
                 ("User capabilities", FlareFormatters.jsonPreview(sdkLab.userCapabilities))
             ])
             .padding(FlareDesign.Spacing.md)
-            .flarePanel()
         }
+        // Every field here takes an id, an operation name or JSON.
+        .identifierInput()
     }
 }
 
@@ -284,7 +286,7 @@ private struct EventConsole: View {
                 LabButton(title: "Unsubscribe all", operation: "events.unsubscribe_all")
             }
             if sdkLab.eventLog.isEmpty {
-                EmptyStateView(title: "No events yet", message: "Login, sync, send, or run capability probes to populate typed event logs.", symbol: "dot.radiowaves.left.and.right")
+                FlareIMUI.EmptyStateView(title: "No events yet", description: "Login, sync, send, or run capability probes to populate typed event logs.", icon: "diagnostics").frame(maxWidth: .infinity, maxHeight: .infinity)
                     .frame(minHeight: 220)
             } else {
                 ForEach(sdkLab.eventLog) { event in
@@ -303,7 +305,6 @@ private struct EventConsole: View {
                         Spacer()
                     }
                     .padding(FlareDesign.Spacing.md)
-                    .flarePanel()
                 }
             }
         }
@@ -335,7 +336,6 @@ private struct CoverageMatrix: View {
                     }
                 }
                 .padding(FlareDesign.Spacing.md)
-                .flarePanel()
             }
         }
     }
@@ -371,7 +371,6 @@ private struct LabResultsView: View {
                             .lineLimit(8)
                     }
                     .padding(FlareDesign.Spacing.md)
-                    .flarePanel()
                 }
             }
         }

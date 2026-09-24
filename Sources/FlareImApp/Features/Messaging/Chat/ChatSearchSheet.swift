@@ -1,3 +1,4 @@
+import FlareIMUI
 import FlareCoreAppleSDK
 import AVFoundation
 import AVKit
@@ -105,11 +106,11 @@ struct ChatSearchSheet: View {
             .padding(FlareDesign.Spacing.xl)
 
             if viewModel.results.isEmpty {
-                EmptyStateView(
+                FlareIMUI.EmptyStateView(
                     title: String(localized: "Search the current conversation"),
-                    message: String(localized: "Enter a keyword to search"),
-                    symbol: "magnifyingglass"
-                )
+                    description: String(localized: "Enter a keyword to search"),
+                    icon: "search"
+                ).frame(maxWidth: .infinity, maxHeight: .infinity)
                 .frame(maxWidth: .infinity)
             } else {
                 ScrollView {

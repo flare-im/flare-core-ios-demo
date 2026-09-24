@@ -1,6 +1,6 @@
 # xcodegen spec — wraps the SwiftPM FlareImApp package into a runnable iOS app target.
 # Generate:  xcodegen generate   (after scripts/sync_ffi.sh)
-# Build sim: xcodebuild -project FlareImApp.xcodeproj -scheme FlareImApp \
+# Build sim: xcodebuild -project FlareImApp.xcodeproj -scheme FlareImExampleApp \
 #              -destination 'platform=iOS Simulator,name=iPhone 17' build
 #
 # FFI: the iOS NativeLibraryLoader resolves the C-ABI via dlopen(nil), so the static
@@ -35,9 +35,13 @@ targets:
         INFOPLIST_KEY_NSMicrophoneUsageDescription: FlareIM needs microphone access to record and send voice messages.
         ONLY_ACTIVE_ARCH: "YES"
         SWIFT_VERSION: "6.0"
-        # Static FFI (arm64 simulator slice). dlopen(nil)+dlsym needs force_load + export_dynamic.
+        # Select the Rust target for the SDK and current architecture being linked.
+        "FLARE_FFI_TARGET[sdk=iphoneos*][arch=arm64]": aarch64-apple-ios
+        "FLARE_FFI_TARGET[sdk=iphonesimulator*][arch=arm64]": aarch64-apple-ios-sim
+        "FLARE_FFI_TARGET[sdk=iphonesimulator*][arch=x86_64]": x86_64-apple-ios
+        # dlopen(nil)+dlsym needs force_load + export_dynamic.
         OTHER_LDFLAGS:
           - -force_load
-          - $(PROJECT_DIR)/FFI/ios/aarch64-apple-ios-sim/libflare_im_core_sdk_ffi.a
+          - $(PROJECT_DIR)/FFI/ios/$(FLARE_FFI_TARGET)/libflare_im_core_sdk_ffi.a
           - -Xlinker
           - -export_dynamic

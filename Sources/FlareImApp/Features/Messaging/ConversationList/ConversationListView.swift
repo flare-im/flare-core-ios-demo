@@ -11,6 +11,7 @@ struct ConversationListView: View {
     @State private var startSheetOpen = false
     @State private var moreSheetOpen = false
     @State private var actionConversation: AppConversation?
+    @State private var actionSheetHeight: CGFloat = 500
 
     private var filtered: [AppConversation] {
         let query = searchText.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
@@ -75,9 +76,14 @@ struct ConversationListView: View {
                 },
                 onAction: { action in
                     runConversationAction(action, for: conversation)
+                },
+                onHeightChange: { height in
+                    // Size the sheet to its content. A fixed 500pt detent cut the last row
+                    // ("Clear local history") off at the sheet edge.
+                    actionSheetHeight = min(max(height, 280), 760)
                 }
             )
-            .presentationDetents([.height(500), .medium])
+            .presentationDetents([.height(actionSheetHeight), .large])
             .presentationDragIndicator(.hidden)
         }
     }
@@ -88,7 +94,7 @@ struct ConversationListView: View {
                 AvatarView(title: currentUserTitle, imageURL: "", size: 54)
                 VStack(alignment: .leading, spacing: FlareDesign.Spacing.xs) {
                     Text(currentUserTitle)
-                        .font(.system(size: 26, weight: .bold))
+                        .font(.system(size: FlareSizes.fontSize4xl, weight: .bold))
                         .foregroundStyle(FlareDesign.textPrimary)
                         .lineLimit(1)
                     HStack(spacing: FlareDesign.Spacing.xs) {
@@ -102,14 +108,16 @@ struct ConversationListView: View {
                     }
                 }
                 Spacer()
-                CircleIconButton(symbol: "magnifyingglass", tint: FlareDesign.textSecondary) {
+                CircleIconButton(icon: "search", tint: FlareDesign.textSecondary) {
                     withAnimation(.easeOut(duration: 0.18)) {
                         searchActive.toggle()
                     }
                 }
-                CircleIconButton(symbol: "plus", tint: .white, fill: FlareDesign.brand) {
+                .accessibilityLabel(String(localized: "Search conversations"))
+                CircleIconButton(icon: "add", tint: .white, fill: FlareDesign.brand) {
                     startSheetOpen = true
                 }
+                .accessibilityLabel(String(localized: "New conversation"))
             }
 
             if searchActive {
@@ -146,7 +154,7 @@ struct ConversationListView: View {
                 moreSheetOpen = true
             } label: {
                 Image(systemName: "line.3.horizontal")
-                    .font(.system(size: 17, weight: .bold))
+                    .font(.system(size: FlareSizes.fontSize2xl, weight: .bold))
                     .foregroundStyle(FlareDesign.textSecondary)
                     .frame(width: 44, height: 44)
                     .background(FlareDesign.surfaceAlt)
@@ -167,30 +175,33 @@ struct ConversationListView: View {
 
     @ViewBuilder
     private var content: some View {
-        // 容器收敛到 kit 的 host-rows 变体：统一空态/加载 + 懒滚动外壳，
-        // 每行仍由 app 构建 ConversationCard（保留 contextMenu/滑动/点击附能）。
-        FlareIMUI.ConversationListContainer(
-            items: displayedConversations,
-            contentInsets: EdgeInsets(
-                top: FlareDesign.Spacing.sm, leading: 0, bottom: 28, trailing: 0
-            )
-        ) {
-            FlareIMUI.EmptyStateView(
-                title: searchText.isEmpty ? String(localized: "No conversations") : String(localized: "No matching conversations"),
-                description: searchText.isEmpty ? String(localized: "Tap the plus button to open a conversation") : String(localized: "Try a different keyword"),
-                actionText: String(localized: "Start a conversation"),
-                systemImage: "bubble.left.and.bubble.right",
-                onAction: { startSheetOpen = true }
-            )
-        } row: { conversation in
-            ConversationCard(
-                conversation: conversation,
-                onOpen: { open(conversation) },
-                onActions: { actionConversation = conversation }
-            )
-                .contextMenu { conversationMenu(conversation) }
-            Divider()
-                .padding(.leading, 82)
+        // kit 的 ConversationListContainerView 统一 loading / error / offline 外壳；
+        // 空态与每一行仍由 app 构建（ConversationRowAdapter 保留 contextMenu/滑动/点击附能）。
+        FlareIMUI.ConversationListContainerView(state: FlareApplicationViewState(status: .ready)) {
+            if displayedConversations.isEmpty {
+                FlareIMUI.EmptyStateView(
+                    title: searchText.isEmpty ? String(localized: "No conversations") : String(localized: "No matching conversations"),
+                    description: searchText.isEmpty ? String(localized: "Tap the plus button to open a conversation") : String(localized: "Try a different keyword"),
+                    actionText: String(localized: "Start a conversation"),
+                    icon: "chats",
+                    onAction: { startSheetOpen = true }
+                )
+            } else {
+                ScrollView {
+                    LazyVStack(alignment: .leading, spacing: 0) {
+                        ForEach(displayedConversations) { conversation in
+                            ConversationRowAdapter(
+                                conversation: conversation,
+                                active: messaging.selectedConversation?.conversationId == conversation.conversationId,
+                                onOpen: { open(conversation) },
+                                onActions: { actionConversation = conversation }
+                            )
+                            .contextMenu { conversationMenu(conversation) }
+                        }
+                    }
+                    .padding(EdgeInsets(top: FlareDesign.Spacing.sm, leading: 0, bottom: 28, trailing: 0))
+                }
+            }
         }
         .background(FlareDesign.surface)
     }
@@ -288,15 +299,15 @@ struct ConversationListView: View {
 }
 
 private struct CircleIconButton: View {
-    let symbol: String
+    let icon: String
     var tint: Color
     var fill: Color = FlareDesign.surfaceAlt
     let action: () -> Void
 
     var body: some View {
         FlareIMUI.IconButtonView(
-            systemImage: symbol,
-            accessibilityLabel: symbol,
+            icon: icon,
+            accessibilityLabel: icon,
             tint: tint,
             background: fill,
             customSize: 46,
@@ -305,47 +316,22 @@ private struct CircleIconButton: View {
     }
 }
 
-private struct ConversationCard: View {
+private struct ConversationRowAdapter: View {
     let conversation: AppConversation
+    let active: Bool
     var onOpen: () -> Void
     var onActions: () -> Void
 
     var body: some View {
-        HStack(alignment: .center, spacing: FlareDesign.Spacing.md) {
-            Button(action: onOpen) {
-                FlareIMUI.ConversationRowView(item: rowData, avatarSize: 50)
-                    .contentShape(Rectangle())
-            }
-            .buttonStyle(.plain)
-
-            Button(action: onActions) {
-                Image(systemName: "ellipsis")
-                    .font(.system(size: 15, weight: .bold))
-                    .foregroundStyle(FlareDesign.textSecondary)
-                    .frame(width: 34, height: 34)
-                    .background(FlareDesign.surfaceAlt)
-                    .clipShape(Circle())
-                    .overlay(Circle().stroke(Color.black.opacity(0.04), lineWidth: 1))
-            }
-            .buttonStyle(.plain)
-            .accessibilityLabel("Conversation actions")
-        }
-        .padding(.horizontal, FlareDesign.Spacing.lg)
-        .padding(.vertical, FlareDesign.Spacing.xs)
-        .frame(maxWidth: .infinity, minHeight: 78)
-        .background(conversation.isPinned ? FlareDesign.brandSoft.opacity(0.16) : FlareDesign.surface)
-        .overlay(alignment: .leading) {
-            if conversation.isPinned {
-                Rectangle()
-                    .fill(FlareDesign.brand.opacity(0.55))
-                    .frame(width: 3)
-            }
+        HStack(alignment: .center, spacing: 0) {
+            FlareIMUI.ConversationRowView(item: rowData, active: active, onSelect: { _ in onOpen() }, onLongPress: { _ in onActions() })
+            FlareIMUI.IconButtonView(icon: "more",
+                                    accessibilityLabel: String(localized: "Conversation actions"),
+                                    customSize: FlareSizes.touchTarget, action: onActions)
         }
     }
 
-    // Maps the app conversation into the kit's presentational row model. The kit
-    // renders avatar/pin/title/tags/preview/time/unread; the app keeps only the
-    // ellipsis-actions affordance and the pinned row background around it.
+    // The host maps SDK fields and actions; the kit owns row presentation.
     private var rowData: FlareIMUI.ConversationRowData {
         FlareIMUI.ConversationRowData(
             id: conversation.id,
@@ -417,124 +403,49 @@ private struct ConversationActionSheet: View {
     let conversation: AppConversation
     let onOpen: () -> Void
     let onAction: (String) -> Void
+    var onHeightChange: (CGFloat) -> Void = { _ in }
 
     var body: some View {
         ScrollView {
-            VStack(spacing: FlareDesign.Spacing.md) {
-                Capsule()
-                    .fill(Color.black.opacity(0.12))
-                    .frame(width: 36, height: 4)
-                    .padding(.top, FlareDesign.Spacing.md)
-
-                header
-                quickActions
-                managementGroup
-                dangerGroup
-            }
-            .padding(.horizontal, FlareDesign.Spacing.lg)
-            .padding(.bottom, FlareDesign.Spacing.xl)
-        }
-        .background(FlareDesign.surfaceAlt)
-    }
-
-    private var header: some View {
-        HStack(spacing: FlareDesign.Spacing.md) {
-            AvatarView(title: conversation.appTitle, imageURL: conversation.avatarUrl, size: 42)
-            VStack(alignment: .leading, spacing: FlareDesign.Spacing.xs) {
-                HStack(spacing: FlareDesign.Spacing.sm) {
-                    Text(conversation.appTitle)
-                        .font(.headline.weight(.bold))
-                        .foregroundStyle(FlareDesign.textPrimary)
-                        .lineLimit(1)
-                    if conversation.isPinned {
-                        Image(systemName: "pin.fill")
-                            .font(.caption2.weight(.bold))
-                            .foregroundStyle(FlareDesign.brand)
-                    }
-                    if conversation.isMuted {
-                        Image(systemName: "bell.slash")
-                            .font(.caption2.weight(.bold))
-                            .foregroundStyle(FlareDesign.textTertiary)
-                    }
+            VStack(spacing: FlareSizes.spacingSm) {
+                FlareIMUI.ConversationActionSheetView(
+                    conversation: .init(id: conversation.id, title: conversation.appTitle,
+                                        pinned: conversation.isPinned, muted: conversation.isMuted,
+                                        unreadCount: Int(conversation.unreadCount), archived: conversation.isArchived),
+                    capabilities: .init(pin: true, mute: true, archive: true, delete: true),
+                    onAction: { _, action in
+                        switch action {
+                        case .pin, .unpin: run("pin")
+                        case .mute, .unmute: run("mute")
+                        case .archive, .unarchive: run("archive")
+                        case .delete: run("delete")
+                        default: break
+                        }
+                    },
+                    onClose: { dismiss() }
+                )
+                // Host actions the kit sheet has no entry for. They sit in one card on the same
+                // surface and radius as the kit's action groups; as bare rows they read as a
+                // second, unstyled menu under the first.
+                VStack(spacing: 0) {
+                    FlareIMUI.FlareSettingsRow(item: .init(key: "open", label: String(localized: "Open"),
+                        icon: "forward", kind: .value), onSelect: { _ in dismiss(); onOpen() })
+                    FlareIMUI.FlareSettingsRow(item: .init(key: "unread", label: String(localized: "Mark as unread"),
+                        icon: "mark-unread", kind: .value), onSelect: { _ in run("unread") })
+                    FlareIMUI.FlareSettingsRow(item: .init(key: "clear", label: String(localized: "Clear local history"),
+                        icon: "clear-history", kind: .value, danger: true), onSelect: { _ in run("clear") })
                 }
-                Text(conversation.appPreview.isEmpty ? String(localized: "No messages") : conversation.appPreview)
-                    .font(.footnote)
-                    .foregroundStyle(FlareDesign.textSecondary)
-                    .lineLimit(1)
+                .padding(.horizontal, FlareSizes.spacingMd)
+                .padding(.vertical, FlareSizes.spacingXs)
+                .background(RoundedRectangle(cornerRadius: FlareSizes.radius2xl, style: .continuous).fill(FlareDesign.surface))
+                .padding(.horizontal, FlareSizes.spacingSm)
             }
-            Spacer(minLength: 0)
+            .padding(FlareSizes.spacingMd)
+            .background(GeometryReader { proxy in
+                Color.clear.preference(key: ConversationActionSheetHeightKey.self, value: proxy.size.height)
+            })
         }
-        .padding(FlareDesign.Spacing.md)
-        .background(FlareDesign.surface)
-        .clipShape(RoundedRectangle(cornerRadius: FlareDesign.Radius.xl, style: .continuous))
-        .overlay(
-            RoundedRectangle(cornerRadius: FlareDesign.Radius.xl, style: .continuous)
-                .stroke(Color.black.opacity(0.04), lineWidth: 1)
-        )
-    }
-
-    private var quickActions: some View {
-        HStack(spacing: FlareDesign.Spacing.sm) {
-            ConversationQuickAction(symbol: "arrow.right", title: String(localized: "Open"), tint: FlareDesign.brand) {
-                dismiss()
-                onOpen()
-            }
-            ConversationQuickAction(
-                symbol: conversation.isPinned ? "pin.slash" : "pin",
-                title: conversation.isPinned ? String(localized: "Unpin") : String(localized: "Pin"),
-                tint: FlareDesign.brand
-            ) {
-                run("pin")
-            }
-            ConversationQuickAction(
-                symbol: conversation.isMuted ? "bell" : "bell.slash",
-                title: conversation.isMuted ? String(localized: "Unmute") : String(localized: "Mute"),
-                tint: FlareDesign.textSecondary
-            ) {
-                run("mute")
-            }
-            ConversationQuickAction(symbol: "mail.badge", title: String(localized: "Unread"), tint: FlareDesign.brand) {
-                run("unread")
-            }
-        }
-        .frame(maxWidth: .infinity)
-    }
-
-    private var managementGroup: some View {
-        VStack(spacing: 0) {
-            ConversationActionRow(
-                symbol: conversation.isArchived ? "archivebox" : "archivebox.fill",
-                title: conversation.isArchived ? String(localized: "Unarchive") : String(localized: "Archive"),
-                tint: FlareDesign.textSecondary
-            ) {
-                run("archive")
-            }
-        }
-        .background(FlareDesign.surface)
-        .clipShape(RoundedRectangle(cornerRadius: FlareDesign.Radius.xl, style: .continuous))
-        .overlay(
-            RoundedRectangle(cornerRadius: FlareDesign.Radius.xl, style: .continuous)
-                .stroke(Color.black.opacity(0.04), lineWidth: 1)
-        )
-    }
-
-    private var dangerGroup: some View {
-        VStack(spacing: 0) {
-            ConversationActionRow(symbol: "eraser", title: String(localized: "Clear local history"), tint: FlareDesign.danger, isDestructive: true) {
-                run("clear")
-            }
-            Divider()
-                .padding(.leading, 58)
-            ConversationActionRow(symbol: "trash", title: String(localized: "Delete conversation"), tint: FlareDesign.danger, isDestructive: true) {
-                run("delete")
-            }
-        }
-        .background(FlareDesign.surface)
-        .clipShape(RoundedRectangle(cornerRadius: FlareDesign.Radius.xl, style: .continuous))
-        .overlay(
-            RoundedRectangle(cornerRadius: FlareDesign.Radius.xl, style: .continuous)
-                .stroke(Color.black.opacity(0.04), lineWidth: 1)
-        )
+        .onPreferenceChange(ConversationActionSheetHeightKey.self) { onHeightChange($0) }
     }
 
     private func run(_ action: String) {
@@ -543,61 +454,10 @@ private struct ConversationActionSheet: View {
     }
 }
 
-private struct ConversationQuickAction: View {
-    let symbol: String
-    let title: String
-    let tint: Color
-    let action: () -> Void
-
-    var body: some View {
-        Button(action: action) {
-            VStack(spacing: FlareDesign.Spacing.xs) {
-                Image(systemName: symbol)
-                    .font(.system(size: 18, weight: .semibold))
-                    .foregroundStyle(tint)
-                    .frame(height: 22)
-                Text(title)
-                    .font(.caption2.weight(.semibold))
-                    .foregroundStyle(tint)
-                    .lineLimit(1)
-                    .minimumScaleFactor(0.82)
-            }
-            .frame(maxWidth: .infinity)
-            .frame(height: 64)
-            .background(FlareDesign.surface)
-            .clipShape(RoundedRectangle(cornerRadius: FlareDesign.Radius.large, style: .continuous))
-            .overlay(
-                RoundedRectangle(cornerRadius: FlareDesign.Radius.large, style: .continuous)
-                    .stroke(Color.black.opacity(0.04), lineWidth: 1)
-            )
-        }
-        .buttonStyle(.plain)
-    }
-}
-
-private struct ConversationActionRow: View {
-    let symbol: String
-    let title: String
-    let tint: Color
-    var isDestructive = false
-    let action: () -> Void
-
-    var body: some View {
-        Button(action: action) {
-            HStack(spacing: FlareDesign.Spacing.md) {
-                Image(systemName: symbol)
-                    .font(.system(size: 19, weight: .semibold))
-                    .foregroundStyle(tint)
-                    .frame(width: 28, height: 28)
-                Text(title)
-                    .font(.subheadline.weight(.semibold))
-                    .foregroundStyle(isDestructive ? FlareDesign.danger : FlareDesign.textPrimary)
-                Spacer(minLength: 0)
-            }
-            .frame(height: 58)
-            .padding(.horizontal, FlareDesign.Spacing.lg)
-        }
-        .buttonStyle(.plain)
+private struct ConversationActionSheetHeightKey: PreferenceKey {
+    static let defaultValue: CGFloat = 0
+    static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) {
+        value = max(value, nextValue())
     }
 }
 
@@ -643,7 +503,7 @@ private struct StartConversationSheet: View {
                     dismiss()
                 } label: {
                     Image(systemName: "xmark")
-                        .font(.system(size: 17, weight: .medium))
+                        .font(.system(size: FlareSizes.fontSize2xl, weight: .medium))
                 }
                 .buttonStyle(.plain)
             }
@@ -656,8 +516,10 @@ private struct StartConversationSheet: View {
                     FormFieldView(label: kind == .single ? String(localized: "Peer ID") : String(localized: "Member IDs")) {
                         if kind == .single {
                             InputView(text: $peerUserId, placeholder: String(localized: "Enter the peer's real userId"))
+                                .identifierInput()
                         } else {
                             InputView(text: $groupUserIds, placeholder: String(localized: "Enter member userIds separated by commas"))
+                                .identifierInput()
                         }
                     }
                     Text(kind == .single ? "The conversation ID is generated automatically by the SDK via getOneConversation" : "The group conversation is generated automatically by the SDK via getGroupConversationByUserIds")
@@ -800,7 +662,7 @@ private struct InlineSheetBanner: View {
     var body: some View {
         HStack(alignment: .top, spacing: FlareDesign.Spacing.md) {
             Image(systemName: symbol)
-                .font(.system(size: 16, weight: .bold))
+                .font(.system(size: FlareSizes.fontSize2xl, weight: .bold))
                 .foregroundStyle(iconColor)
                 .frame(width: 20, height: 20)
             VStack(alignment: .leading, spacing: FlareDesign.Spacing.xs) {
@@ -908,7 +770,7 @@ private struct ActionRow: View {
         Button(action: action) {
             HStack(spacing: FlareDesign.Spacing.lg) {
                 Image(systemName: symbol)
-                    .font(.system(size: 17, weight: .semibold))
+                    .font(.system(size: FlareSizes.fontSize2xl, weight: .semibold))
                     .foregroundStyle(tint)
                     .frame(width: 28, height: 28)
                 Text(title)
@@ -969,7 +831,6 @@ struct ConversationDetailsPanel: View {
                     (String(localized: "Max seq"), "\(conversation.maxSeq)")
                 ])
                 .padding(FlareDesign.Spacing.md)
-                .flarePanel()
             }
             .padding(FlareDesign.Spacing.lg)
         }

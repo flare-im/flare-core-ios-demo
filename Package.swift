@@ -11,7 +11,7 @@ let package = Package(
     ],
     dependencies: [
         .package(path: "../../packages/flare-core-apple-sdk"),
-        .package(path: "../../../flare-im-design/ios-im-ui"),
+        .package(path: "../../../flare-im-design/packages/ios-im-ui"),
     ],
     targets: [
         .target(

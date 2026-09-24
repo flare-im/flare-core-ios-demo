@@ -36,6 +36,13 @@ struct AppConversation: Identifiable, Sendable {
         if !name.isEmpty {
             return name
         }
+        // A direct chat's channel id is the peer's user id. Without this step the title fell
+        // back to the raw conversation id whenever a snapshot arrived without a display name —
+        // on open, and again after pinning. Same order as the Android example.
+        let channel = channelId.trimmingCharacters(in: .whitespacesAndNewlines)
+        if !channel.isEmpty {
+            return channel
+        }
         return conversationId.isEmpty ? "Untitled conversation" : conversationId
     }
 

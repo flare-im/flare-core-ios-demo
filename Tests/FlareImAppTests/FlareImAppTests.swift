@@ -354,6 +354,23 @@ final class FlareImAppTests: XCTestCase {
         XCTAssertEqual(message.core.content?.contentType, .text)
     }
 
+    func testMessageRowReactionGroupsMarkTheViewersOwnAndHideOnRecall() {
+        let reactions = [
+            ReactionEntry(count: 2, emoji: "👍", userIds: ["alice", "bob"]),
+            ReactionEntry(count: 1, emoji: "❤️", userIds: ["carol"]),
+        ]
+        let live = SdkModelMapper.messageFromCore(Message(clientMsgId: "client-1", reactions: reactions, senderId: "carol", serverId: "server-1"))
+
+        let groups = MessageRow.reactionGroups(for: live, currentUserId: "alice")
+        XCTAssertEqual(groups.map(\.emoji), ["👍", "❤️"])
+        XCTAssertEqual(groups.map(\.count), [2, 1])
+        XCTAssertEqual(groups.map(\.reactedBySelf), [true, false])
+        XCTAssertEqual(MessageRow.reactionGroups(for: live, currentUserId: nil).map(\.reactedBySelf), [false, false])
+
+        let recalled = SdkModelMapper.messageFromCore(Message(clientMsgId: "client-2", isRecalled: true, reactions: reactions, serverId: "server-2"))
+        XCTAssertTrue(MessageRow.reactionGroups(for: recalled, currentUserId: "alice").isEmpty)
+    }
+
     func testMessageContentPresentationReadsSelectedMediaPayloads() {
         let image = MessageContent(contentType: .image, data: [
             "description": AnySendable("IMG_001"),
@@ -943,117 +960,6 @@ final class FlareImAppTests: XCTestCase {
         XCTAssertEqual(audio.payload?.source?.mimeType, "audio/mp4")
         XCTAssertEqual(audio.payload?.source?.size, 18_000)
         XCTAssertEqual(audio.payload?.source?.durationMs, 18_000)
-    }
-
-    func testMessageMenuModelMatchesWebActionsForIncomingMessage() {
-        let message = makeMenuMessage(senderId: "12")
-
-        let model = MessageMenuModel.build(
-            message: message,
-            currentUserId: "11",
-            isConnected: true,
-            isPending: false,
-            isFailed: false,
-            multiSelectMode: false
-        )
-
-        XCTAssertEqual(model.reactions, MessageMenuModel.quickReactions)
-        XCTAssertEqual(model.quickActions.map(\.key), [.reply, .forward])
-        XCTAssertEqual(model.listActions.map(\.key), [.multiSelect, .mark, .pin, .copy, .preview, .delete])
-    }
-
-    func testMessageMenuModelAddsOwnerOnlyActionsForOutgoingText() {
-        let message = makeMenuMessage(senderId: "11", contentType: .text)
-
-        let model = MessageMenuModel.build(
-            message: message,
-            currentUserId: "11",
-            isConnected: true,
-            isPending: false,
-            isFailed: false,
-            multiSelectMode: false
-        )
-
-        XCTAssertEqual(model.quickActions.map(\.key), [.reply, .forward, .edit, .recall])
-        XCTAssertEqual(model.listActions.map(\.key), [.multiSelect, .mark, .pin, .copy, .preview, .delete])
-    }
-
-    func testMessageMenuModelShowsResendForFailedOutgoingMessage() {
-        let message = makeMenuMessage(
-            senderId: "11",
-            localState: MessageLocalState(failed: true, isLocal: true, sending: false)
-        )
-
-        let model = MessageMenuModel.build(
-            message: message,
-            currentUserId: "11",
-            isConnected: true,
-            isPending: false,
-            isFailed: true,
-            multiSelectMode: false
-        )
-
-        XCTAssertEqual(model.quickActions.map(\.key), [.resend, .reply, .forward])
-        XCTAssertFalse(model.listActions.map(\.key).contains(.edit))
-        XCTAssertFalse(model.listActions.map(\.key).contains(.recall))
-    }
-
-    func testMessageMenuModelReplacesPinActionsWhenMessageIsPinned() {
-        let message = makeMenuMessage(senderId: "12", attributes: ["pinned": "true"])
-
-        let model = MessageMenuModel.build(
-            message: message,
-            currentUserId: "11",
-            isConnected: true,
-            isPending: false,
-            isFailed: false,
-            multiSelectMode: false
-        )
-
-        let keys = model.listActions.map(\.key)
-        XCTAssertTrue(keys.contains(.unpin))
-        XCTAssertFalse(keys.contains(.pin))
-        XCTAssertFalse(keys.contains(.pinSelf))
-    }
-
-    func testMessageMenuModelHidesActionsForRecalledMessage() {
-        let message = makeMenuMessage(senderId: "11", isRecalled: true)
-
-        let model = MessageMenuModel.build(
-            message: message,
-            currentUserId: "11",
-            isConnected: true,
-            isPending: false,
-            isFailed: false,
-            multiSelectMode: false
-        )
-
-        XCTAssertTrue(model.reactions.isEmpty)
-        XCTAssertTrue(model.quickActions.isEmpty)
-        XCTAssertTrue(model.listActions.isEmpty)
-    }
-
-    private func makeMenuMessage(
-        senderId: String,
-        contentType: MessageContentType = .text,
-        attributes: [String: String] = [:],
-        isRecalled: Bool = false,
-        localState: MessageLocalState? = nil
-    ) -> AppMessage {
-        SdkModelMapper.messageFromCore(Message(
-            attributes: attributes,
-            clientCreatedAt: 900,
-            clientMsgId: "client-\(UUID().uuidString)",
-            content: MessageContent(contentType: contentType, data: ["text": AnySendable("hello")]),
-            conversationId: "c1",
-            conversationSeq: 7,
-            createdAt: 1000,
-            isRecalled: isRecalled,
-            localState: localState,
-            senderDisplayName: senderId,
-            senderId: senderId,
-            serverId: "server-\(UUID().uuidString)"
-        ))
     }
 }
 

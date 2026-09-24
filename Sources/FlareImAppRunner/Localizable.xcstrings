@@ -2,6 +2,46 @@
   "sourceLanguage": "en",
   "version": "1.0",
   "strings": {
+  "More conversation actions": {
+    "localizations": {
+      "zh-Hans": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "更多会话操作"
+        }
+      }
+    }
+  },
+  "Conversation details": {
+    "localizations": {
+      "zh-Hans": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "会话详情"
+        }
+      }
+    }
+  },
+  "Video call unavailable": {
+    "localizations": {
+      "zh-Hans": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "视频通话暂不可用"
+        }
+      }
+    }
+  },
+  "Voice call unavailable": {
+    "localizations": {
+      "zh-Hans": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "语音通话暂不可用"
+        }
+      }
+    }
+  },
     "The server rejected the access token: the signing secret or issuer does not match the server, or the token has expired. Check the signing secret and try again.": {
       "localizations": {
         "zh-Hans": {
@@ -652,26 +692,6 @@
           "stringUnit": {
             "state": "translated",
             "value": "置顶"
-          }
-        }
-      }
-    },
-    "Flag": {
-      "localizations": {
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "标记"
-          }
-        }
-      }
-    },
-    "Edit text": {
-      "localizations": {
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "编辑文本"
           }
         }
       }
@@ -2596,16 +2616,6 @@
         }
       }
     },
-    "Save to file": {
-      "localizations": {
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "保存到文件"
-          }
-        }
-      }
-    },
     "Loading...": {
       "localizations": {
         "zh-Hans": {
@@ -2632,46 +2642,6 @@
           "stringUnit": {
             "state": "translated",
             "value": "消息菜单"
-          }
-        }
-      }
-    },
-    "Choose pin scope": {
-      "localizations": {
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "选择置顶范围"
-          }
-        }
-      }
-    },
-    "Pin for everyone": {
-      "localizations": {
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "对所有人置顶"
-          }
-        }
-      }
-    },
-    "Pin only for me": {
-      "localizations": {
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "仅对我置顶"
-          }
-        }
-      }
-    },
-    "Choose whether this pinned message is visible to everyone or only your own device.": {
-      "localizations": {
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "选择该置顶消息是对所有人可见,还是仅本设备可见。"
           }
         }
       }
@@ -3002,26 +2972,6 @@
           "stringUnit": {
             "state": "translated",
             "value": "序号"
-          }
-        }
-      }
-    },
-    "Pick an emoji": {
-      "localizations": {
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "选择表情"
-          }
-        }
-      }
-    },
-    "Collapse": {
-      "localizations": {
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "收起"
           }
         }
       }

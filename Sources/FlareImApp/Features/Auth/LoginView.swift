@@ -8,7 +8,6 @@ import FlareIMUI
 
 private enum LoginSpec {
     static let logoSize: CGFloat = 64
-    static let buttonHeight: CGFloat = 48
     static let gridStep: CGFloat = 40
     static let formMaxWidth: CGFloat = 430
     static let titleSize: CGFloat = 24
@@ -44,7 +43,7 @@ struct LoginView: View {
             .background(c.bgPrimary)
             .scrollDismissesKeyboard(.interactively)
             .ignoresSafeArea(edges: .top)
-            .loadingOverlay(auth.isBusy)
+            .disabled(auth.isBusy)
         }
     }
 
@@ -86,6 +85,7 @@ struct LoginView: View {
                 hint: String(localized: "Your user ID is assigned by the system and shown in account settings")
             ) {
                 InputView(text: auth.draftBinding(\.userId), placeholder: String(localized: "Enter user ID"))
+                    .identifierInput()
                     .onChange(of: auth.loginDraft.userId) { _ in auth.clearValidation() }
             }
 
@@ -106,23 +106,16 @@ struct LoginView: View {
             }
 
             if let error = auth.lastError {
-                LoginErrorBanner(message: LoginErrorText.display(error))
+                StatusBannerView(text: LoginErrorText.display(error), tone: .danger)
             }
 
-            Button {
+            ButtonView(
+                label: String(localized: auth.isBusy ? "Signing in..." : "Sign in"),
+                size: .lg, loading: auth.isBusy, disabled: !auth.canLogin,
+                block: true, icon: "forward"
+            ) {
                 Task { await auth.submit() }
-            } label: {
-                Label(auth.isBusy ? "Signing in..." : "Sign in", systemImage: "arrow.right.square")
-                    .font(.system(size: FlareSizes.fontSize2xl, weight: .bold))
-                    .frame(maxWidth: .infinity)
-                    .frame(height: LoginSpec.buttonHeight)
-                    .foregroundStyle(.white)
-                    .background(LinearGradient(colors: [c.primary, c.info], startPoint: .leading, endPoint: .trailing))
-                    .clipShape(RoundedRectangle(cornerRadius: FlareSizes.radiusLg, style: .continuous))
             }
-            .buttonStyle(.plain)
-            .disabled(!auth.canLogin)
-            .opacity(auth.canLogin ? 1 : 0.55)
             .padding(.top, FlareSizes.spacingSm)
 
             VStack(spacing: FlareSizes.spacingSm) {
@@ -168,15 +161,18 @@ struct LoginView: View {
             if serverOpen {
                 FormFieldView(label: String(localized: "WebSocket URL")) {
                     InputView(text: auth.draftBinding(\.wsUrl), placeholder: "ws://host:60051/ws")
+                        .identifierInput()
                 }
                 FormFieldView(
                     label: String(localized: "Gateway URL"),
                     hint: String(localized: "The SDK issues and refreshes access tokens from this gateway")
                 ) {
                     InputView(text: auth.draftBinding(\.httpUrl), placeholder: "http://host:50050")
+                        .identifierInput()
                 }
                 FormFieldView(label: String(localized: "QUIC URL")) {
                     InputView(text: auth.draftBinding(\.quicUrl), placeholder: "quic://host:60052")
+                        .identifierInput()
                 }
             }
         }
@@ -184,31 +180,6 @@ struct LoginView: View {
         .background(c.bgSecondary)
         .clipShape(RoundedRectangle(cornerRadius: FlareSizes.radiusLg, style: .continuous))
         .overlay(RoundedRectangle(cornerRadius: FlareSizes.radiusLg, style: .continuous).stroke(c.borderPrimary, lineWidth: 1))
-    }
-}
-
-private struct LoginErrorBanner: View {
-    let message: String
-    @Environment(\.colorScheme) private var scheme
-    private var c: FlareColors { FlareColors.of(scheme) }
-
-    var body: some View {
-        HStack(alignment: .top, spacing: FlareSizes.spacingMd) {
-            Image(systemName: "exclamationmark.triangle.fill")
-                .font(.system(size: 17, weight: .semibold))
-                .foregroundStyle(c.error)
-                .padding(.top, FlareSizes.spacingXs)
-            VStack(alignment: .leading, spacing: FlareSizes.spacingXs) {
-                Text("Sign-in failed").font(.footnote.weight(.bold)).foregroundStyle(c.textPrimary)
-                Text(message).font(.caption).foregroundStyle(c.textSecondary)
-                    .lineLimit(3).fixedSize(horizontal: false, vertical: true)
-            }
-            Spacer(minLength: 0)
-        }
-        .padding(.horizontal, FlareSizes.spacingMd)
-        .padding(.vertical, FlareSizes.spacingMd)
-        .background(c.error.opacity(0.11))
-        .clipShape(RoundedRectangle(cornerRadius: FlareSizes.radiusLg, style: .continuous))
     }
 }
 

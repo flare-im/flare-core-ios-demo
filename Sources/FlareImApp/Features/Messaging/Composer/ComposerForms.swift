@@ -1,3 +1,4 @@
+import FlareIMUI
 import FlareCoreAppleSDK
 import AVFoundation
 import AVKit
@@ -128,7 +129,7 @@ struct ComposerInputFormSheet: View {
                     dismiss()
                 } label: {
                     Image(systemName: "xmark")
-                        .font(.system(size: 16, weight: .medium))
+                        .font(.system(size: FlareSizes.fontSize2xl, weight: .medium))
                         .foregroundStyle(FlareDesign.textSecondary)
                         .frame(width: 34, height: 34)
                 }
@@ -165,17 +166,13 @@ struct ComposerInputFormSheet: View {
             Divider()
             HStack(spacing: FlareDesign.Spacing.md) {
                 Spacer()
-                Button("Cancel") {
+                ButtonView(label: String(localized: "Cancel"), variant: .secondary) {
                     dismiss()
                 }
-                .buttonStyle(.bordered)
-                Button("Send") {
+                ButtonView(label: String(localized: "Send"), disabled: !isValid) {
                     onSubmit(payload)
                     dismiss()
                 }
-                .buttonStyle(.borderedProminent)
-                .tint(FlareDesign.brand)
-                .disabled(!isValid)
             }
             .padding(.horizontal, FlareDesign.Spacing.xl)
             .padding(.vertical, FlareDesign.Spacing.lg)
@@ -189,19 +186,19 @@ struct ComposerInputFormSheet: View {
         case .imageFallback:
             inputField(String(localized: "Image caption"), placeholder: String(localized: "e.g. On-site photo"), text: $title)
         case .video:
-            inputField(String(localized: "Video ID"), placeholder: "video-id", text: $title)
+            identifierField(String(localized: "Video ID"), placeholder: "video-id", text: $title)
             inputField(String(localized: "Description"), placeholder: String(localized: "Video caption"), text: $detail)
         case .location:
             inputField(String(localized: "Place name"), placeholder: String(localized: "e.g. Shanghai office"), text: $title)
             inputField(String(localized: "Address"), placeholder: String(localized: "e.g. 100 Century Ave"), text: $detail)
-            inputField(String(localized: "Coordinates (optional)"), placeholder: "31.2304,121.4737", text: $extra)
+            identifierField(String(localized: "Coordinates (optional)"), placeholder: "31.2304,121.4737", text: $extra)
         case .card:
             inputField(String(localized: "Name"), placeholder: String(localized: "Contact card title"), text: $title)
             inputField(String(localized: "Description"), placeholder: String(localized: "Role, team, or note"), text: $detail)
-            inputField(String(localized: "Business ID"), placeholder: "card-id", text: $extra)
+            identifierField(String(localized: "Business ID"), placeholder: "card-id", text: $extra)
         case .task:
             inputField(String(localized: "Task title"), placeholder: String(localized: "e.g. Review the iOS composer"), text: $title)
-            inputField(String(localized: "Participants"), placeholder: String(localized: "Separate IDs with spaces or commas"), text: $participants)
+            identifierField(String(localized: "Participants"), placeholder: String(localized: "Separate IDs with spaces or commas"), text: $participants)
         case .schedule:
             inputField(String(localized: "Title / name"), placeholder: String(localized: "e.g. Product review"), text: $title)
             DatePicker("Start time", selection: $startDate, displayedComponents: [.date, .hourAndMinute])
@@ -209,19 +206,19 @@ struct ComposerInputFormSheet: View {
             DatePicker("End time", selection: $endDate, displayedComponents: [.date, .hourAndMinute])
                 .font(.subheadline)
             inputField(String(localized: "Venue"), placeholder: String(localized: "Room or online link"), text: $detail)
-            inputField(String(localized: "Participants"), placeholder: String(localized: "Separate IDs with spaces or commas"), text: $participants)
+            identifierField(String(localized: "Participants"), placeholder: String(localized: "Separate IDs with spaces or commas"), text: $participants)
         case .poll:
             inputField(String(localized: "Poll title"), placeholder: String(localized: "e.g. Pick a release time"), text: $title)
             multilineField(String(localized: "Options"), placeholder: String(localized: "One option per line"), text: $detail)
-            inputField(String(localized: "Participants"), placeholder: String(localized: "Optional — separate IDs with spaces or commas"), text: $participants)
+            identifierField(String(localized: "Participants"), placeholder: String(localized: "Optional — separate IDs with spaces or commas"), text: $participants)
         case .link:
-            inputField(String(localized: "Link"), placeholder: "https://", text: $title)
+            identifierField(String(localized: "Link"), placeholder: "https://", text: $title)
             inputField(String(localized: "Title"), placeholder: String(localized: "Card title"), text: $detail)
             inputField(String(localized: "Description"), placeholder: String(localized: "Card summary"), text: $extra)
         case .miniProgram:
-            inputField(String(localized: "Mini program ID"), placeholder: "app-id", text: $title)
+            identifierField(String(localized: "Mini program ID"), placeholder: "app-id", text: $title)
             inputField(String(localized: "Title"), placeholder: String(localized: "Entry title"), text: $detail)
-            inputField(String(localized: "Page path"), placeholder: "/pages/home", text: $extra)
+            identifierField(String(localized: "Page path"), placeholder: "/pages/home", text: $extra)
         case .notification, .announcement:
             inputField(String(localized: "Title"), placeholder: String(localized: "Enter a title"), text: $title)
             multilineField(String(localized: "Body"), placeholder: String(localized: "Enter the body"), text: $detail)
@@ -320,48 +317,17 @@ struct ComposerInputFormSheet: View {
     }
 
     private func inputField(_ title: String, placeholder: String, text: Binding<String>) -> some View {
-        VStack(alignment: .leading, spacing: FlareDesign.Spacing.sm) {
-            Text(title)
-                .font(.caption.weight(.semibold))
-                .foregroundStyle(FlareDesign.textSecondary)
-            TextField(placeholder, text: text)
-                .textFieldStyle(.plain)
-                .padding(.horizontal, FlareDesign.Spacing.md)
-                .padding(.vertical, FlareDesign.Spacing.md)
-                .background(FlareDesign.surface)
-                .clipShape(RoundedRectangle(cornerRadius: FlareDesign.Radius.medium, style: .continuous))
-                .overlay(
-                    RoundedRectangle(cornerRadius: FlareDesign.Radius.medium, style: .continuous)
-                        .stroke(Color.black.opacity(0.08), lineWidth: 1)
-                )
-        }
+        FormFieldView(label: title) { InputView(text: text, placeholder: placeholder) }
+    }
+
+    /// IDs, links, paths and coordinates are exact strings: no automatic capitalization or
+    /// correction, or a participant typed as `ui2-release-ios` is sent as `Ui2-release-ios`.
+    private func identifierField(_ title: String, placeholder: String, text: Binding<String>) -> some View {
+        FormFieldView(label: title) { InputView(text: text, placeholder: placeholder).identifierInput() }
     }
 
     private func multilineField(_ title: String, placeholder: String, text: Binding<String>) -> some View {
-        VStack(alignment: .leading, spacing: FlareDesign.Spacing.sm) {
-            Text(title)
-                .font(.caption.weight(.semibold))
-                .foregroundStyle(FlareDesign.textSecondary)
-            TextEditor(text: text)
-                .frame(minHeight: 90)
-                .padding(FlareDesign.Spacing.sm)
-                .background(FlareDesign.surface)
-                .clipShape(RoundedRectangle(cornerRadius: FlareDesign.Radius.medium, style: .continuous))
-                .overlay(
-                    RoundedRectangle(cornerRadius: FlareDesign.Radius.medium, style: .continuous)
-                        .stroke(Color.black.opacity(0.08), lineWidth: 1)
-                )
-                .overlay(alignment: .topLeading) {
-                    if text.wrappedValue.isEmpty {
-                        Text(placeholder)
-                            .font(.body)
-                            .foregroundStyle(FlareDesign.textTertiary)
-                            .padding(.horizontal, FlareDesign.Spacing.lg)
-                            .padding(.vertical, FlareDesign.Spacing.lg)
-                            .allowsHitTesting(false)
-                    }
-                }
-        }
+        FormFieldView(label: title) { InputView(text: text, placeholder: placeholder, multiline: true) }
     }
 
     private func trimmed(_ value: String, fallback: String) -> String {

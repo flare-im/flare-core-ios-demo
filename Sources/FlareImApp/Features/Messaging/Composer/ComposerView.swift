@@ -1,15 +1,17 @@
 import FlareCoreAppleSDK
+import FlareIMUI
 import AVFoundation
 import AVKit
 import SwiftUI
-#if canImport(PhotosUI)
-import PhotosUI
-#endif
+import UniformTypeIdentifiers
 
 private enum ComposerPanel {
     case none
     case emoji
-    case more
+}
+
+private enum ComposerMoreKind {
+    case file, video, location, card, task, schedule, poll, link, miniProgram, topic, notification, announcement
 }
 
 struct ComposerView: View {
@@ -19,186 +21,52 @@ struct ComposerView: View {
     let conversation: AppConversation
     var expandedInputHeight: CGFloat = 360
     @State private var panel: ComposerPanel = .none
-    @State private var richInputMode = false
-    @State private var inputExpanded = false
-    @State private var richAttributedText = RichTextMarkdownSerializer.emptyDocument()
-    @State private var richSelection = RichTextComposerSelection()
-    @State private var fileImporterOpen = false
     @State private var formDraft: ComposerFormDraft?
-    @StateObject private var audioRecorder = ComposerAudioRecorder()
-    @State private var voicePressActive = false
-    @State private var voiceDragCancelling = false
-    @State private var voiceCompletionInFlight = false
-    private let voiceCancelDistance: CGFloat = 58
-    #if canImport(PhotosUI)
-    @State private var selectedPhotoItem: PhotosPickerItem?
-    @State private var selectedVideoItem: PhotosPickerItem?
-    @State private var videoPickerOpen = false
-    #endif
+    // Layer 5：相册 / 文件选择由宿主适配器执行（Core/Platform/IosPlatformAdapter），
+    // 这里只读能力决定入口存在与否、走原生还是走 fallback 表单。
+    @Environment(\.flarePlatform) private var platform
 
     var body: some View {
         VStack(spacing: 0) {
-            if !messaging.failedMessageKeys.isEmpty {
-                ComposerStatusBanner(
-                    symbol: "exclamationmark.triangle.fill",
-                    message: String(localized: "\(messaging.failedMessageKeys.count) messages failed to send. Long-press a failed message to retry."),
-                    tone: .danger
-                )
-                .transition(.opacity.combined(with: .move(edge: .bottom)))
-            } else if messaging.runtimeStatus.isBlocking {
-                ComposerStatusBanner(
-                    symbol: messaging.runtimeStatus.productIcon,
-                    message: messaging.lastError ?? messaging.runtimeStatus.productLabel,
-                    tone: messaging.runtimeStatus.productTone
-                )
-                .transition(.opacity.combined(with: .move(edge: .bottom)))
+            if messaging.runtimeStatus.isBlocking {
+                StatusBannerView(text: messaging.lastError ?? messaging.runtimeStatus.productLabel, tone: .warning)
             }
-
-            if let replyTarget = messaging.replyTarget {
-                ComposerReplyBanner(message: replyTarget) {
-                    messaging.clearReplyTarget()
-                }
-                .padding(.horizontal, FlareDesign.Spacing.xs)
-                .padding(.top, FlareDesign.Spacing.sm)
-                .transition(.opacity.combined(with: .move(edge: .bottom)))
+            if panel == .emoji {
+                FlareEmojiStickerPicker(emojiLabel: String(localized: "Default emoji"), onInsertEmoji: { text += "[\($0)]" }, onSendSticker: { packageId, stickerId in
+                    panel = .none
+                    Task { await messaging.buildAndSend(op: .createSticker, payload: ["stickerId": stickerId, "packageId": packageId]) }
+                })
             }
-
-            ZStack {
-                // 版式对齐 Flutter（见 examples/COMPOSER-DESIGN-SPEC.md）：工具栏精确为 6 图标，
-                // 「展开」与「发送」移至输入行尾部——iOS 多行输入无 IME 发送键，发送须显式按钮。
-                HStack(alignment: .bottom, spacing: FlareDesign.Spacing.xs) {
-                    composerInput
-                        .disabled(messaging.runtimeStatus.isBlocking)
-                        .onChange(of: text) { value in
-                            Task { await messaging.setTyping(!value.isEmpty) }
-                        }
-                    if !richInputMode {
-                        ComposerTool(
-                            symbol: inputExpanded ? "arrow.down.right.and.arrow.up.left" : "arrow.up.left.and.arrow.down.right",
-                            title: inputExpanded ? String(localized: "Collapse input") : String(localized: "Expand input"),
-                            selected: inputExpanded
-                        ) {
-                            panel = .none
-                            inputExpanded.toggle()
-                        }
-                        ComposerSendButton(enabled: canSend) {
-                            sendCurrentText()
-                        }
-                    }
-                }
-
-                if audioRecorder.isRecording {
-                    VoiceRecorderBar(
-                        elapsed: audioRecorder.elapsedTime,
-                        maximumDuration: ComposerAudioRecorder.maximumDuration,
-                        isCancelling: voiceDragCancelling
-                    )
-                    .transition(.opacity.combined(with: .scale(scale: 0.98, anchor: .bottom)))
-                    .zIndex(1)
-                }
-            }
-            .padding(.horizontal, FlareDesign.Spacing.xs)
-            .padding(.top, FlareDesign.Spacing.sm)
-
-            if !richInputMode {
-                // 6 槽均分图标工具栏，对齐 Flutter：表情 / @提及 / 语音 / 图片 / 富文本 / 更多。
-                HStack(spacing: 0) {
-                    ComposerTool(symbol: "face.smiling", title: String(localized: "Emoji"), selected: panel == .emoji) {
-                        toggle(.emoji)
-                    }
-                    .frame(maxWidth: .infinity)
-                    ComposerTool(symbol: "at", title: String(localized: "Mention")) {
-                        text += "@"
-                    }
-                    .frame(maxWidth: .infinity)
-                    ComposerVoiceTool(
-                        isRecording: audioRecorder.isRecording,
-                        isCancelling: voiceDragCancelling,
-                        onChanged: handleVoiceDragChanged,
-                        onEnded: handleVoiceDragEnded
-                    )
-                    .frame(maxWidth: .infinity)
-                    #if canImport(PhotosUI)
-                    PhotosPicker(selection: $selectedPhotoItem, matching: .images) {
-                        ComposerToolIcon(symbol: "photo", title: String(localized: "Image"))
-                    }
-                    .buttonStyle(.plain)
-                    .accessibilityLabel(Text("Image"))
-                    .frame(maxWidth: .infinity)
-                    #else
-                    ComposerTool(symbol: "photo", title: String(localized: "Image")) {
+            FlareIMUI.ComposerView(
+                text: $text,
+                placeholder: String(localized: "Send to \(conversation.appTitle)"),
+                disabled: messaging.runtimeStatus.isBlocking,
+                replyTo: messaging.replyTarget.map { FlareReplyTarget(senderName: $0.senderTitle, summary: $0.previewText) },
+                onSend: { value in text = value; sendCurrentText() },
+                onImage: platform.capabilities.imagePicker == .unsupported ? nil : {
+                    if platform.capabilities.imagePicker == .supported {
+                        Task { await pickAndSendMedia(video: false, operation: "composer.image") }
+                    } else {
                         formDraft = ComposerFormDraft(kind: .imageFallback)
                     }
-                    .frame(maxWidth: .infinity)
-                    #endif
-                    ComposerTextTool(title: String(localized: "Rich text"), selected: richInputMode) {
-                        enterRichInputMode()
-                    }
-                    .frame(maxWidth: .infinity)
-                    ComposerTool(symbol: panel == .more ? "xmark" : "plus.circle", title: String(localized: "More"), selected: panel == .more) {
-                        toggle(.more)
-                    }
-                    .frame(maxWidth: .infinity)
+                },
+                onSendRich: { value in Task { if !(await messaging.buildAndSend(op: .createRichDoc, payload: ["markdown": value])), text.isEmpty, messaging.selectedConversation?.conversationId == conversation.conversationId { text = value } } },
+                onEmoji: { toggle(.emoji) },
+                onCancelReply: { messaging.clearReplyTarget() },
+                actions: composerActions,
+                onAction: { action in
+                    if let kind = actionKinds[action.id] { handleMoreItem(kind) }
+                },
+                enableVoice: true,
+                onVoiceSend: { url, duration in
+                    do {
+                        let payload: [String: Any] = ["audioId": url.path, "sourcePath": url.path, "sourceUrl": url.absoluteString, "mimeType": "audio/wav", "durationMs": duration]
+                        return await messaging.buildAndSend(op: .createAudio, payload: try await messaging.uploadAudioAttachmentPayload(payload))
+                    } catch { return false }
                 }
-                .padding(.horizontal, FlareDesign.Spacing.lg)
-                .padding(.top, FlareDesign.Spacing.sm)
-                .padding(.bottom, FlareDesign.Spacing.xxs)
-            }
-
-            if panel == .emoji {
-                EmojiPanel(
-                    onInsert: { value in text += value },
-                    onSendSticker: { sticker in
-                        panel = .none
-                        var payload: [String: Any] = [
-                            "stickerId": sticker.stickerId,
-                            "packageId": sticker.packageId,
-                            "format": "webp"
-                        ]
-                        if let url = EmojiPresentation.stickerURL(packageId: sticker.packageId, stickerId: sticker.stickerId) {
-                            payload["url"] = url.absoluteString
-                        }
-                        Task { await messaging.buildAndSend(op: .createSticker, payload: payload) }
-                    }
-                )
-                .transition(.move(edge: .bottom).combined(with: .opacity))
-            } else if panel == .more {
-                MoreComposerPanel(
-                    onSelect: { item in
-                        panel = .none
-                        handleMoreItem(item)
-                    }
-                )
-                .transition(.move(edge: .bottom).combined(with: .opacity))
-            }
+            ).id(conversation.conversationId)
         }
-        .background(
-            FlareDesign.surfaceAlt
-                .ignoresSafeArea(.container, edges: .bottom)
-        )
-        .animation(.easeOut(duration: 0.18), value: panel)
-        .animation(.easeOut(duration: 0.18), value: richInputMode)
-        .animation(.easeOut(duration: 0.18), value: inputExpanded)
-        .animation(.easeOut(duration: 0.14), value: voiceDragCancelling)
-        .onChange(of: audioRecorder.elapsedTime) { elapsed in
-            handleVoiceDurationChange(elapsed)
-        }
-        #if canImport(PhotosUI)
-        .onChange(of: selectedPhotoItem) { item in
-            handleSelectedPhoto(item)
-        }
-        .onChange(of: selectedVideoItem) { item in
-            handleSelectedVideo(item)
-        }
-        .photosPicker(isPresented: $videoPickerOpen, selection: $selectedVideoItem, matching: .videos)
-        #endif
-        .fileImporter(
-            isPresented: $fileImporterOpen,
-            allowedContentTypes: [.item],
-            allowsMultipleSelection: false
-        ) { result in
-            handleFileImport(result)
-        }
+        .onChange(of: text) { value in Task { await messaging.setTyping(!value.isEmpty) } }
         .sheet(item: $formDraft) { draft in
             ComposerInputFormSheet(draft: draft, currentUserId: messaging.currentUserId) { payload in
                 Task { await messaging.buildAndSend(op: draft.kind.op, payload: payload) }
@@ -208,182 +76,59 @@ struct ComposerView: View {
         }
     }
 
-    private var canSend: Bool {
-        let hasContent: Bool
-        if richInputMode {
-            hasContent = !RichTextMarkdownSerializer.export(richAttributedText).plainText.isEmpty
-        } else {
-            hasContent = !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-        }
-        return hasContent && !messaging.runtimeStatus.isBlocking
+    /// 能力决定入口：unsupported 的选择器不出现在更多面板里。
+    private var visibleActionIds: Set<String> {
+        var hidden: Set<String> = []
+        if platform.capabilities.filePicker != .supported { hidden.insert("file") }
+        if platform.capabilities.imagePicker == .unsupported { hidden.insert("video") }
+        return Set(actionKinds.keys).subtracting(hidden)
     }
 
-    @ViewBuilder
-    private var composerInput: some View {
-        if richInputMode {
-            RichComposerEditor(
-                richText: $richAttributedText,
-                selection: $richSelection,
-                placeholder: String(localized: "Send rich text to \(conversation.appTitle)"),
-                canSend: canSend,
-                expanded: inputExpanded,
-                expandedHeight: expandedInputHeight,
-                onShortcut: toggleRichTextShortcut,
-                onTextChange: { value in
-                    text = value
-                },
-                onToggleExpanded: {
-                    panel = .none
-                    inputExpanded.toggle()
-                },
-                onExitRichText: {
-                    text = RichTextMarkdownSerializer.export(richAttributedText).plainText
-                    richInputMode = false
-                },
-                onSend: sendCurrentText
-            )
-        } else {
-            EmojiAwareComposerInput(
-                text: $text,
-                placeholder: String(localized: "Send to \(conversation.appTitle)"),
-                highlighted: panel != .none || inputExpanded,
-                expanded: inputExpanded,
-                expandedHeight: expandedInputHeight
-            )
-        }
+    private var actionKinds: [String: ComposerMoreKind] { ["file": .file, "video": .video, "location": .location, "card": .card, "task": .task, "schedule": .schedule, "poll": .poll, "link": .link, "miniProgram": .miniProgram, "topic": .topic, "notification": .notification, "announcement": .announcement] }
+    private var composerActions: [FlareComposerAction] {
+        [("file", "File", "file"), ("video", "Video", "video"), ("location", "Location", "location"), ("card", "Card", "card"), ("task", "Task", "check"), ("schedule", "Schedule", "calendar"), ("poll", "Vote", "poll"), ("link", "Link", "link"), ("miniProgram", "Mini program", "mini-app"), ("topic", "Topic", "tag"), ("notification", "Notification", "notification"), ("announcement", "Announcement", "announcement")]
+            .filter { visibleActionIds.contains($0.0) }
+            .map { FlareComposerAction(id: $0.0, label: NSLocalizedString($0.1, comment: ""), icon: $0.2) }
     }
 
     private func toggle(_ next: ComposerPanel) {
         panel = panel == next ? .none : next
     }
 
-    private func enterRichInputMode() {
-        if !richInputMode {
-            let plainDraft = text.trimmingCharacters(in: .whitespacesAndNewlines)
-            let richPlain = RichTextMarkdownSerializer.export(richAttributedText).plainText
-            if richPlain != plainDraft {
-                richAttributedText = plainDraft.isEmpty
-                    ? RichTextMarkdownSerializer.emptyDocument()
-                    : RichTextMarkdownSerializer.plainDocument(text)
-            }
-            richSelection = RichTextComposerSelection()
-        }
-        richInputMode = true
-        panel = .none
-    }
-
-    private func resetRichDraft() {
-        richAttributedText = RichTextMarkdownSerializer.emptyDocument()
-        richSelection = RichTextComposerSelection()
-    }
-
     private func sendCurrentText() {
         panel = .none
-
-        if richInputMode {
-            let export = RichTextMarkdownSerializer.export(richAttributedText)
-            guard !export.plainText.isEmpty else { return }
-            Task {
-                let sent: Bool
-                if let replyTarget = messaging.replyTarget {
-                    sent = await messaging.sendReplyText(export.plainText, replyingTo: replyTarget)
-                } else {
-                    sent = await messaging.buildAndSend(
-                        op: .createRichDoc,
-                        payload: [
-                            "markdown": export.markdown,
-                            "plainText": export.plainText,
-                            "searchText": export.searchText,
-                            "title": export.title
-                        ]
-                    )
-                }
-                if sent {
-                    text = ""
-                    resetRichDraft()
-                } else {
-                    let fallbackSent = await messaging.sendText(export.plainText)
-                    text = fallbackSent ? "" : export.plainText
-                    if fallbackSent {
-                        resetRichDraft()
-                    }
-                }
-            }
-            return
-        }
-
         let outbound = text.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !outbound.isEmpty else { return }
         if let replyTarget = messaging.replyTarget {
             Task {
                 let sent = await messaging.sendReplyText(outbound, replyingTo: replyTarget)
-                text = sent ? "" : outbound
+                if !sent, text.isEmpty, messaging.selectedConversation?.conversationId == conversation.conversationId { text = outbound }
             }
             return
         }
         if let emojiKey = EmojiPresentation.lonePackKey(in: outbound) {
             Task {
                 let sent = await messaging.buildAndSend(op: .createEmoji, payload: ["emoji": emojiKey])
-                text = sent ? "" : outbound
+                if !sent, text.isEmpty, messaging.selectedConversation?.conversationId == conversation.conversationId { text = outbound }
             }
         } else {
             Task {
                 let sent = await messaging.sendText(outbound)
-                text = sent ? "" : outbound
+                if !sent, text.isEmpty, messaging.selectedConversation?.conversationId == conversation.conversationId { text = outbound }
             }
         }
     }
 
-    private func toggleRichTextShortcut(_ shortcut: RichTextShortcut) {
-        richSelection.toggle(shortcut)
-    }
-
-    private func handleVoiceDragChanged(_ value: DragGesture.Value) {
-        guard !voiceCompletionInFlight else { return }
-        if !voicePressActive {
-            voicePressActive = true
-            voiceDragCancelling = false
-            startVoiceRecording()
-        }
-        voiceDragCancelling = value.translation.height <= -voiceCancelDistance
-    }
-
-    private func handleVoiceDragEnded(_ value: DragGesture.Value) {
-        let shouldCancel = value.translation.height <= -voiceCancelDistance || voiceDragCancelling
-        voicePressActive = false
-        voiceDragCancelling = false
-        if shouldCancel {
-            cancelVoiceRecording()
-        } else {
-            finishVoiceRecording()
-        }
-    }
-
-    private func handleVoiceDurationChange(_ elapsed: TimeInterval) {
-        guard audioRecorder.isRecording,
-              elapsed >= ComposerAudioRecorder.maximumDuration,
-              !voiceCompletionInFlight else {
-            return
-        }
-        voicePressActive = false
-        if voiceDragCancelling {
-            cancelVoiceRecording()
-        } else {
-            finishVoiceRecording()
-        }
-        voiceDragCancelling = false
-    }
-
-    private func handleMoreItem(_ item: ComposerMoreItem) {
-        switch item.kind {
+    private func handleMoreItem(_ kind: ComposerMoreKind) {
+        switch kind {
         case .file:
-            fileImporterOpen = true
+            Task { await pickAndSendFile() }
         case .video:
-            #if canImport(PhotosUI)
-            videoPickerOpen = true
-            #else
-            formDraft = ComposerFormDraft(kind: .video)
-            #endif
+            if platform.capabilities.imagePicker == .supported {
+                Task { await pickAndSendMedia(video: true, operation: "composer.video") }
+            } else {
+                formDraft = ComposerFormDraft(kind: .video)
+            }
         case .location:
             formDraft = ComposerFormDraft(kind: .location)
         case .card:
@@ -407,40 +152,74 @@ struct ComposerView: View {
         }
     }
 
-    #if canImport(PhotosUI)
-    private func handleSelectedPhoto(_ item: PhotosPickerItem?) {
-        guard let item else { return }
-        selectedPhotoItem = nil
-        panel = .none
-        Task {
-            do {
-                guard let data = try await item.loadTransferable(type: Data.self) else { return }
-                let payload = try persistSelectedImagePayload(data: data, item: item)
-                let uploadedPayload = try await messaging.uploadImageAttachmentPayload(payload)
-                await messaging.buildAndSend(op: .createImage, payload: uploadedPayload)
-            } catch {
-                environment.appendLab(
-                    "composer.image",
-                    status: "error",
-                    detail: FlareFormatters.errorText(error)
-                )
+    /// 走契约取一次选择：CANCELLED（含空选择 / 关闭）静默，其余错误码进 Lab 日志。
+    private func settled(_ result: FlarePlatformResult<[FlarePickedFile]>, operation: String) -> FlarePickedFile? {
+        switch result {
+        case .success(let files):
+            return files.first
+        case .failure(let error):
+            if error.code != .cancelled {
+                environment.appendLab(operation, status: "error", detail: error.description)
             }
+            return nil
         }
     }
 
-    private func persistSelectedImagePayload(data: Data, item: PhotosPickerItem) throws -> [String: Any] {
-        let id = "local-image-\(UUID().uuidString)"
-        let contentType = item.supportedContentTypes.first
-        let fileExtension = contentType?.preferredFilenameExtension ?? "jpg"
-        let fileURL = try composerMediaDirectory().appendingPathComponent("\(id).\(fileExtension)")
-        try data.write(to: fileURL, options: [.atomic])
+    /// 相册：`video` 打开图片+视频，否则只图片；按返回的类型决定 createImage / createVideo。
+    private func pickAndSendMedia(video: Bool, operation: String) async {
+        guard let picked = settled(await platform.pickImages(FlarePickImagesOptions(video: video)), operation: operation) else { return }
+        panel = .none
+        do {
+            if isVideo(picked) {
+                await messaging.buildAndSend(op: .createVideo, payload: try await videoPayload(for: picked))
+            } else {
+                let payload = try await messaging.uploadImageAttachmentPayload(imagePayload(for: picked))
+                await messaging.buildAndSend(op: .createImage, payload: payload)
+            }
+        } catch {
+            environment.appendLab(operation, status: "error", detail: FlareFormatters.errorText(error))
+        }
+    }
 
+    private func pickAndSendFile() async {
+        guard let picked = settled(await platform.pickFiles(FlarePickFilesOptions()), operation: "composer.file") else { return }
+        panel = .none
+        guard let url = pickedURL(picked) else {
+            environment.appendLab("composer.file", status: "error", detail: "picked file has no path")
+            return
+        }
         var payload: [String: Any] = [
-            "imageId": id,
-            "localPath": fileURL.path,
-            "sourceUrl": fileURL.absoluteString,
-            "mimeType": contentType?.preferredMIMEType ?? "image/jpeg",
-            "size": data.count
+            "fileId": url.deletingPathExtension().lastPathComponent,
+            "fileName": picked.name,
+            "url": url.absoluteString
+        ]
+        if let size = picked.size { payload["size"] = size }
+        if let mimeType = picked.mimeType { payload["mimeType"] = mimeType }
+        await messaging.buildAndSend(op: .createFile, payload: payload)
+    }
+
+    /// 适配器把选择物化成 composer 缓存里的文件，这里只读它。
+    private func pickedURL(_ picked: FlarePickedFile) -> URL? {
+        if let path = picked.path, !path.isEmpty { return URL(fileURLWithPath: path) }
+        if let uri = picked.uri, let url = URL(string: uri), url.isFileURL { return url }
+        return nil
+    }
+
+    private func isVideo(_ picked: FlarePickedFile) -> Bool {
+        if let mimeType = picked.mimeType { return mimeType.hasPrefix("video/") }
+        guard let url = pickedURL(picked), let type = UTType(filenameExtension: url.pathExtension) else { return false }
+        return type.conforms(to: .movie)
+    }
+
+    private func imagePayload(for picked: FlarePickedFile) throws -> [String: Any] {
+        guard let url = pickedURL(picked) else { throw ComposerPickError.noPath }
+        let data = try Data(contentsOf: url)
+        var payload: [String: Any] = [
+            "imageId": url.deletingPathExtension().lastPathComponent,
+            "localPath": url.path,
+            "sourceUrl": url.absoluteString,
+            "mimeType": picked.mimeType ?? "image/jpeg",
+            "size": picked.size ?? data.count
         ]
         if let size = platformImageSize(data: data) {
             payload["width"] = size.width
@@ -449,184 +228,19 @@ struct ComposerView: View {
         return payload
     }
 
-    private func handleSelectedVideo(_ item: PhotosPickerItem?) {
-        guard let item else { return }
-        selectedVideoItem = nil
-        panel = .none
-        Task {
-            do {
-                guard let data = try await item.loadTransferable(type: Data.self) else { return }
-                let payload = try await persistSelectedVideoPayload(data: data, item: item)
-                await messaging.buildAndSend(op: .createVideo, payload: payload)
-            } catch {
-                environment.appendLab(
-                    "composer.video",
-                    status: "error",
-                    detail: FlareFormatters.errorText(error)
-                )
-            }
-        }
-    }
-
-    private func persistSelectedVideoPayload(data: Data, item: PhotosPickerItem) async throws -> [String: Any] {
-        let id = "local-video-\(UUID().uuidString)"
-        let contentType = item.supportedContentTypes.first(where: { $0.conforms(to: .movie) }) ?? item.supportedContentTypes.first
-        let fileExtension = contentType?.preferredFilenameExtension ?? "mp4"
-        let fileURL = try composerMediaDirectory().appendingPathComponent("\(id).\(fileExtension)")
-        try data.write(to: fileURL, options: [.atomic])
-
+    private func videoPayload(for picked: FlarePickedFile) async throws -> [String: Any] {
+        guard let url = pickedURL(picked) else { throw ComposerPickError.noPath }
         var payload: [String: Any] = [
-            "videoId": id,
-            "description": fileURL.lastPathComponent,
-            "sourceUrl": fileURL.absoluteString,
-            "mimeType": contentType?.preferredMIMEType ?? "video/mp4",
-            "size": data.count
+            "videoId": url.deletingPathExtension().lastPathComponent,
+            "description": url.lastPathComponent,
+            "sourceUrl": url.absoluteString,
+            "mimeType": picked.mimeType ?? "video/mp4"
         ]
-        if let durationMs = await mediaDurationMs(url: fileURL) {
-            payload["durationMs"] = durationMs
-        }
+        if let size = picked.size { payload["size"] = size }
+        if let durationMs = await mediaDurationMs(url: url) { payload["durationMs"] = durationMs }
         return payload
     }
-    #endif
-
-    private func handleFileImport(_ result: Result<[URL], Error>) {
-        switch result {
-        case .success(let urls):
-            guard let url = urls.first else { return }
-            panel = .none
-            Task {
-                let didAccess = url.startAccessingSecurityScopedResource()
-                defer {
-                    if didAccess {
-                        url.stopAccessingSecurityScopedResource()
-                    }
-                }
-                do {
-                    let values = try url.resourceValues(forKeys: [.fileSizeKey, .contentTypeKey, .localizedNameKey])
-                    let fileId = "local-file-\(UUID().uuidString)"
-                    let cachedURL = try copyFileToComposerCache(
-                        sourceURL: url,
-                        id: fileId,
-                        preferredExtension: url.pathExtension
-                    )
-                    let cachedValues = try cachedURL.resourceValues(forKeys: [.fileSizeKey])
-                    var payload: [String: Any] = [
-                        "fileId": fileId,
-                        "fileName": values.localizedName ?? url.lastPathComponent,
-                        "url": cachedURL.absoluteString
-                    ]
-                    if let size = cachedValues.fileSize ?? values.fileSize {
-                        payload["size"] = size
-                    }
-                    if let mimeType = values.contentType?.preferredMIMEType {
-                        payload["mimeType"] = mimeType
-                    }
-                    await messaging.buildAndSend(op: .createFile, payload: payload)
-                } catch {
-                    environment.appendLab(
-                        "composer.file",
-                        status: "error",
-                        detail: FlareFormatters.errorText(error)
-                    )
-                }
-            }
-        case .failure(let error):
-            environment.appendLab(
-                "composer.file",
-                status: "error",
-                detail: FlareFormatters.errorText(error)
-            )
-        }
-    }
-
-    private func startVoiceRecording() {
-        guard !audioRecorder.isRecording else { return }
-        panel = .none
-        Task {
-            do {
-                try await audioRecorder.start()
-                if !voicePressActive && !voiceCompletionInFlight {
-                    audioRecorder.cancel()
-                }
-            } catch {
-                environment.appendLab(
-                    "composer.audio.start",
-                    status: "error",
-                    detail: FlareFormatters.errorText(error)
-                )
-            }
-        }
-    }
-
-    private func finishVoiceRecording() {
-        guard audioRecorder.isRecording, !voiceCompletionInFlight else { return }
-        voiceCompletionInFlight = true
-        voicePressActive = false
-        voiceDragCancelling = false
-        Task {
-            defer {
-                voiceCompletionInFlight = false
-            }
-            do {
-                guard let payload = try audioRecorder.finish() else { return }
-                let uploadedPayload = try await messaging.uploadAudioAttachmentPayload(payload)
-                await messaging.buildAndSend(op: .createAudio, payload: uploadedPayload)
-            } catch {
-                environment.appendLab(
-                    "composer.audio.finish",
-                    status: "error",
-                    detail: FlareFormatters.errorText(error)
-                )
-            }
-        }
-    }
-
-    private func cancelVoiceRecording() {
-        voicePressActive = false
-        voiceDragCancelling = false
-        voiceCompletionInFlight = false
-        audioRecorder.cancel()
-    }
-
 }
 
-private struct ComposerReplyBanner: View {
-    let message: AppMessage
-    let onClose: () -> Void
-
-    var body: some View {
-        HStack(spacing: FlareDesign.Spacing.sm) {
-            RoundedRectangle(cornerRadius: 2)
-                .fill(FlareDesign.brand)
-                .frame(width: 3, height: 34)
-
-            VStack(alignment: .leading, spacing: 2) {
-                Text(message.senderTitle)
-                    .font(.caption.weight(.bold))
-                    .foregroundStyle(FlareDesign.brand)
-                    .lineLimit(1)
-                Text(message.previewText)
-                    .font(.caption)
-                    .foregroundStyle(FlareDesign.textSecondary)
-                    .lineLimit(1)
-            }
-
-            Spacer(minLength: FlareDesign.Spacing.sm)
-
-            Button(action: onClose) {
-                Image(systemName: "xmark")
-                    .font(.system(size: 12, weight: .bold))
-                    .foregroundStyle(FlareDesign.textSecondary)
-                    .frame(width: 26, height: 26)
-                    .background(FlareDesign.surfaceAlt)
-                    .clipShape(Circle())
-            }
-            .buttonStyle(.plain)
-        }
-        .padding(.horizontal, FlareDesign.Spacing.md)
-        .padding(.vertical, FlareDesign.Spacing.sm)
-        .background(FlareDesign.surface)
-        .clipShape(RoundedRectangle(cornerRadius: FlareDesign.Radius.medium, style: .continuous))
-        .shadow(color: Color.black.opacity(0.05), radius: 12, x: 0, y: 4)
-    }
-}
+/// 选择结果没有可读路径时的本地错误（适配器保证有，这里只是不静默吞）。
+private enum ComposerPickError: Error { case noPath }

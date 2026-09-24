@@ -29,7 +29,6 @@ struct ChatView: View {
             ZStack(alignment: .bottom) {
                 VStack(spacing: 0) {
                     header
-                    Divider()
                     timeline
                         .frame(maxHeight: .infinity)
                     ComposerView(
@@ -39,14 +38,14 @@ struct ChatView: View {
                     )
                 }
 
-                if let actionMessage {
-                    messageActionOverlay(message: actionMessage, availableHeight: geometry.size.height)
-                        .transition(.move(edge: .bottom).combined(with: .opacity))
-                }
             }
         }
         .background(FlareDesign.appBackground)
-        .animation(.easeOut(duration: 0.2), value: actionMessage?.appStableId)
+        .sheet(item: $actionMessage) { message in
+            MessageActionSheetHost(message: message, onDismiss: { actionMessage = nil })
+                .presentationDetents([.medium, .large])
+                .presentationDragIndicator(.visible)
+        }
         .sheet(isPresented: $searchSheetOpen) {
             ChatSearchSheet(viewModel: search, conversation: conversation)
                 .presentationDetents([.height(550), .large])
@@ -74,36 +73,6 @@ struct ChatView: View {
         }
     }
 
-    private func messageActionOverlay(message: AppMessage, availableHeight: CGFloat) -> some View {
-        let sheetHeight = min(560, max(430, availableHeight * 0.68))
-        return ZStack(alignment: .bottom) {
-            Color.black.opacity(0.28)
-                .ignoresSafeArea()
-                .onTapGesture {
-                    actionMessage = nil
-                }
-
-            MessageActionSheet(message: message, onDismiss: {
-                actionMessage = nil
-            })
-            .frame(maxWidth: .infinity)
-            .frame(height: sheetHeight)
-            .background(FlareDesign.surfaceAlt)
-            .clipShape(
-                UnevenRoundedRectangle(
-                    topLeadingRadius: 28,
-                    bottomLeadingRadius: 0,
-                    bottomTrailingRadius: 0,
-                    topTrailingRadius: 28,
-                    style: .continuous
-                )
-            )
-            .shadow(color: Color.black.opacity(0.14), radius: 18, x: 0, y: -8)
-        }
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .ignoresSafeArea(.container, edges: [.horizontal, .bottom])
-    }
-
     private func expandedComposerInputHeight(for availableHeight: CGFloat) -> CGFloat {
         let reservedChromeHeight: CGFloat = 166
         return max(240, availableHeight - reservedChromeHeight)
@@ -120,52 +89,32 @@ struct ChatView: View {
     }
 
     private var header: some View {
-        HStack(spacing: FlareDesign.Spacing.md) {
-            if showsBackButton {
-                Button(action: onBack) {
-                    Image(systemName: "chevron.left")
-                        .font(.system(size: 18, weight: .semibold))
-                        .frame(width: 34, height: 34)
+        ConversationHeaderView(
+            identity: ConversationIdentity(
+                id: conversation.conversationId,
+                title: conversation.appTitle,
+                avatarURL: conversation.avatarUrl
+            ),
+            capabilities: ConversationHeaderCapabilities(availableActionIds: ["search", "details", "inspector"]),
+            actions: [
+                ConversationHeaderAction(id: "search", label: String(localized: "Search messages"), icon: "search"),
+                ConversationHeaderAction(id: "inspector", label: String(localized: "Conversation details"), icon: "info"),
+                ConversationHeaderAction(id: "details", label: String(localized: "More conversation actions"), icon: "more", placement: .overflow),
+            ],
+            showBack: showsBackButton,
+            onBack: onBack,
+            onAction: { action in
+                switch action.id {
+                case "search":
+                    search.draft.conversationScoped = true
+                    search.draft.keyword = ""
+                    searchSheetOpen = true
+                case "inspector": environment.detailsOpen.toggle()
+                case "details": detailsSheetOpen = true
+                default: break
                 }
-                .buttonStyle(.plain)
             }
-            AvatarView(title: conversation.appTitle, imageURL: conversation.avatarUrl, size: 42)
-            VStack(alignment: .leading, spacing: FlareDesign.Spacing.xxs) {
-                Text(conversation.appTitle)
-                    .font(.headline.weight(.bold))
-                    .foregroundStyle(FlareDesign.textPrimary)
-                    .lineLimit(1)
-                HStack(spacing: FlareDesign.Spacing.xs) {
-                    Circle()
-                        .fill(messaging.runtimeStatus == .ready ? FlareDesign.success : FlareDesign.warning)
-                        .frame(width: 5, height: 5)
-                    Text(messaging.runtimeStatus == .ready ? String(localized: "Online") : messaging.runtimeStatus.productLabel)
-                        .font(.caption)
-                        .foregroundStyle(FlareDesign.textSecondary)
-                }
-            }
-            Spacer(minLength: 8)
-            HeaderIconButton(symbol: "phone") {}
-                .disabled(true)
-                .opacity(0.65)
-            HeaderIconButton(symbol: "video") {}
-                .disabled(true)
-                .opacity(0.65)
-            HeaderIconButton(symbol: "magnifyingglass") {
-                search.draft.conversationScoped = true
-                search.draft.keyword = ""
-                searchSheetOpen = true
-            }
-            HeaderIconButton(symbol: "chart.bar.xaxis") {
-                environment.detailsOpen.toggle()
-            }
-            HeaderIconButton(symbol: "ellipsis") {
-                detailsSheetOpen = true
-            }
-        }
-        .padding(.horizontal, FlareDesign.Spacing.md)
-        .padding(.vertical, FlareDesign.Spacing.sm)
-        .background(FlareDesign.surface)
+        )
     }
 
     private var timeline: some View {
@@ -199,11 +148,11 @@ struct ChatView: View {
                     }
 
                     if messaging.selectedMessages.isEmpty {
-                        EmptyStateView(
+                        FlareIMUI.EmptyStateView(
                             title: String(localized: "No messages"),
-                            message: String(localized: "Send the first message, or use the tools below to build media, tasks, polls, and more."),
-                            symbol: "bubble.left.and.bubble.right"
-                        )
+                            description: String(localized: "Send the first message, or use the tools below to build media, tasks, polls, and more."),
+                            icon: "chats"
+                        ).frame(maxWidth: .infinity, maxHeight: .infinity)
                         .frame(minHeight: 420)
                     } else {
                         ForEach(Array(messaging.selectedMessages.enumerated()), id: \.element.appStableId) { index, message in
@@ -322,21 +271,6 @@ struct ChatView: View {
             return String(localized: "Yesterday \(FlareFormatters.shortTime.string(from: date))")
         }
         return FlareFormatters.shortDateTime.string(from: date)
-    }
-}
-
-private struct HeaderIconButton: View {
-    let symbol: String
-    let action: () -> Void
-
-    var body: some View {
-        FlareIMUI.IconButtonView(
-            systemImage: symbol,
-            accessibilityLabel: symbol,
-            tint: FlareDesign.textSecondary,
-            customSize: 31,
-            action: action
-        )
     }
 }
 

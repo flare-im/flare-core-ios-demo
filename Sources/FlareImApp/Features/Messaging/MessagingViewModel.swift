@@ -1,9 +1,14 @@
 import Combine
 import FlareCoreAppleSDK
+import FlareIMUI
 import Foundation
 
 private let messagePinScopeConversation = 0
 private let messagePinScopeSelf = 1
+/// 标记类型「重要」（核心 MarkType::Important）。
+private let messageMarkTypeImportant = 1
+/// 标记默认色；核心要求 color 非空，不关心颜色时用它。
+private let messageMarkDefaultColor = "#F5A623"
 
 /// 消息特性 ViewModel:会话列表 + 时间线 + 全部消息/会话操作。
 ///
@@ -506,10 +511,15 @@ final class MessagingViewModel: ObservableObject {
                 try await client.messages.pinMessageById(pinRequest(request, scope: messagePinScopeSelf))
             case "unpin":
                 try await client.messages.unpinMessageById(pinRequest(request, scope: messagePinScopeConversation))
+            // mark_by_message_id 要 markType(i32) + color(非空字符串)，unmark 要 markType；
+            // 只发消息 id 必然 INVALID_PARAMETER。取值与 web 参考示例一致（重要 + 默认色）。
             case "mark":
-                try await client.messages.markMessageById(request)
+                try await client.messages.markMessageById(request.merging([
+                    "markType": AnySendable(messageMarkTypeImportant),
+                    "color": AnySendable(messageMarkDefaultColor),
+                ]) { $1 })
             case "unmark":
-                try await client.messages.unmarkMessageById(request)
+                try await client.messages.unmarkMessageById(request.merging(["markType": AnySendable(messageMarkTypeImportant)]) { $1 })
             default:
                 throw unavailable("Unsupported action \(action)")
             }
@@ -677,6 +687,29 @@ final class MessagingViewModel: ObservableObject {
         case .archived: return conversation.isArchived
         case .muted: return conversation.isMuted && !conversation.isArchived
         case .drafts: return !(conversation.draft ?? "").isEmpty && !conversation.isArchived
+        }
+    }
+
+    /// What the core allows for this message right now (`domain::message_actions`), in the type
+    /// the kit's message action sheet takes. The request is flat: `op` sits beside the parameters.
+    func actionAvailability(for message: AppMessage) async -> FlareMessageActionAvailability {
+        guard let client = session.client else { return FlareMessageActionAvailability() }
+        let key = message.appStableId
+        let request: [String: AnySendable] = [
+            "op": AnySendable("action_availability"),
+            "messageId": AnySendable(message.serverId.isEmpty ? message.clientMsgId : message.serverId),
+            "multiSelectMode": AnySendable(isMessageMultiSelectMode),
+            "isPending": AnySendable(pendingMessageKeys.contains(key) || message.localState?.sending == true),
+            "isFailed": AnySendable(failedMessageKeys.contains(key) || message.localState?.failed == true),
+            "isPinned": AnySendable(message.isPinned),
+            "isConnected": AnySendable(runtimeStatus == .ready),
+        ]
+        do {
+            let answer = try await client.messages.dispatchMessage(request)
+            return FlareMessageActionAvailability(json: answer.mapValues(\.value))
+        } catch {
+            appendLab("message.action_availability", status: "error", detail: String(describing: error))
+            return FlareMessageActionAvailability()
         }
     }
 

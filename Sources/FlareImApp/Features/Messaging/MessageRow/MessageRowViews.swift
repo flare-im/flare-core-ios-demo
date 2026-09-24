@@ -1,4 +1,5 @@
 import FlareCoreAppleSDK
+import FlareIMUI
 import AVFoundation
 import AVKit
 import SwiftUI
@@ -8,6 +9,7 @@ struct MessageRow: View {
     let message: AppMessage
     var onOpenMedia: (MediaPreview) -> Void = { _ in }
     var onShowActions: (AppMessage) -> Void = { _ in }
+    @State private var mediaTask: Task<Void, Never>?
 
     private var outgoing: Bool {
         guard let current = messaging.currentUserId else { return false }
@@ -15,95 +17,127 @@ struct MessageRow: View {
     }
 
     var body: some View {
-        HStack(alignment: .bottom, spacing: FlareDesign.Spacing.sm) {
-            if outgoing { Spacer(minLength: 70) }
-            if !outgoing {
-                AvatarView(title: message.senderTitle, imageURL: message.senderAvatar, size: 30)
+        let reactions = Self.reactionGroups(for: message, currentUserId: messaging.currentUserId)
+        VStack(alignment: outgoing ? .trailing : .leading, spacing: 0) {
+            MessageBubbleView(
+                message: presentationMessage,
+                currentUserId: messaging.currentUserId ?? "",
+                conversationKind: .group,
+                onMediaAction: { _, content in openMedia(content) },
+                onResend: outgoing ? { _ in Task { await messaging.retry(message) } } : nil
+            )
+            .contentShape(Rectangle())
+            .highPriorityGesture(
+                LongPressGesture(minimumDuration: 0.42)
+                    .onEnded { _ in onShowActions(message) }
+            )
+            .accessibilityAction(named: Text("More actions")) {
+                onShowActions(message)
             }
-            VStack(alignment: outgoing ? .trailing : .leading, spacing: FlareDesign.Spacing.xs) {
-                if !outgoing {
-                    Text(message.senderTitle)
-                        .font(.caption2.weight(.semibold))
-                        .foregroundStyle(FlareDesign.textSecondary)
-                        .padding(.leading, FlareDesign.Spacing.xxs)
+            // Reactions sit under the bubble, as in the other examples. Tapping a pill you
+            // already reacted with takes it back; any other pill adds that reaction.
+            if !reactions.isEmpty {
+                ReactionSummaryView(reactions: reactions, hideAdd: true) { emoji in
+                    let remove = reactions.first { $0.emoji == emoji }?.reactedBySelf == true
+                    Task { await messaging.messageAction(remove ? "unreact" : "react", message: message, reaction: emoji) }
                 }
-                messageContent
-                if message.isEdited || deliveryState == .failed || deliveryState == .sending {
-                    HStack(spacing: FlareDesign.Spacing.xs) {
-                        if message.isEdited {
-                            Text("Edited")
-                        }
-                        if outgoing {
-                            if deliveryState == .sending {
-                                Text("Sending")
-                            } else if deliveryState == .failed {
-                                Text("Failed")
-                            }
-                        }
-                    }
-                    .font(.caption2)
-                    .foregroundStyle(FlareDesign.textTertiary)
-                }
+                .padding(.horizontal, FlareSizes.spacingMd)
+                .padding(.bottom, FlareSizes.spacingXs)
             }
-            if !outgoing { Spacer(minLength: 70) }
         }
-        .contentShape(Rectangle())
-        .highPriorityGesture(
-            LongPressGesture(minimumDuration: 0.42)
-                .onEnded { _ in onShowActions(message) }
+        .onDisappear { mediaTask?.cancel() }
+    }
+
+    /// The message's reactions for the kit `ReactionSummaryView`. A recalled message shows none.
+    static func reactionGroups(for message: AppMessage, currentUserId: String?) -> [ReactionGroup] {
+        guard !message.isRecalled else { return [] }
+        return message.reactions.map { reaction in
+            ReactionGroup(
+                emoji: reaction.emoji,
+                count: Int(reaction.count),
+                reactedBySelf: currentUserId.map(reaction.userIds.contains) ?? false,
+                users: reaction.userIds
+            )
+        }
+    }
+
+    private var presentationMessage: FlareMessageData {
+        FlareMessageData(
+            id: message.appStableId,
+            senderId: message.senderId,
+            senderName: message.senderTitle,
+            content: presentationContent,
+            senderAvatarURL: message.senderAvatar.isEmpty ? nil : message.senderAvatar,
+            timeLabel: Self.timeFormatter.string(from: Date(timeIntervalSince1970: Double(message.appSortTimestamp) / 1000)),
+            status: presentationStatus,
+            edited: message.isEdited
         )
-        .accessibilityAction(named: Text("More actions")) {
-            onShowActions(message)
-        }
-        .padding(.horizontal, FlareDesign.Spacing.xxs)
     }
 
-    @ViewBuilder
-    private var messageContent: some View {
-        #if DEBUG
-        HStack(alignment: .top, spacing: FlareDesign.Spacing.xs) {
-            if outgoing {
-                debugMenuButton
+    private var presentationContent: FlareMessageContent {
+        if message.isRecalled { return FlareNotificationContent(String(localized: "Message recalled")) }
+        guard let content = message.content else { return FlarePlaceholderContent(String(localized: "Unsupported message")) }
+        switch content.contentType {
+        case .text, .richText, .quote, .forward, .thread:
+            return FlareTextContent(content.previewText)
+        case .image, .imageGroup:
+            guard let url = content.mediaSourceURL?.absoluteString else {
+                return FlarePlaceholderContent(content.previewText)
             }
-            MessageBubble(message: message, outgoing: outgoing, deliveryState: deliveryState, onOpenMedia: onOpenMedia)
-            if !outgoing {
-                debugMenuButton
+            return FlareImageContent(url: url, alt: content.stringValue("description", "title"))
+        case .video:
+            guard let url = content.mediaSourceURL?.absoluteString else {
+                return FlarePlaceholderContent(content.previewText)
             }
+            return FlareVideoContent(url: url, poster: content.stringValue("thumbnailUrl"), durationSec: max(0, (content.mediaDurationMs ?? 0) / 1000))
+        case .audio:
+            return FlareAudioContent(url: content.mediaSourceURL?.absoluteString ?? "", durationSec: max(0, (content.mediaDurationMs ?? 0) / 1000))
+        case .file:
+            return FlareFileContent(name: content.fileDisplayName, url: content.mediaSourceURL?.absoluteString ?? "", sizeBytes: Int(content.mediaByteSize ?? 0))
+        case .location:
+            return FlareLocationContent(name: content.stringValue("title", "name") ?? String(localized: "Location"), address: content.stringValue("address") ?? "")
+        case .sticker:
+            return FlareStickerContent(url: content.mediaSourceURL?.absoluteString ?? content.stringValue("url") ?? "", packageId: content.stringValue("packageId", "package_id"), stickerId: content.stringValue("stickerId", "id"))
+        case .emoji:
+            return FlareEmojiContent(content.stringValue("emoji", "key") ?? content.previewText)
+        case .card:
+            return FlareCardContent(title: content.stringValue("title", "name") ?? content.previewText, subtitle: content.stringValue("subtitle", "description"), imageURL: content.stringValue("thumbnailUrl", "imageUrl"))
+        case .linkCard:
+            return FlareLinkCardContent(url: content.stringValue("url") ?? "", title: content.stringValue("title") ?? content.previewText,
+                description: content.stringValue("description", "summary"), imageURL: content.stringValue("thumbnailUrl", "imageUrl"))
+        case .vote:
+            return FlarePollContent(id: content.stringValue("voteId") ?? "", title: content.stringValue("headline", "title") ?? content.previewText,
+                options: content.data["options"]?.value as? [String] ?? [])
+        case .task:
+            return FlareTaskContent(id: content.stringValue("taskId") ?? "", title: content.stringValue("title") ?? content.previewText,
+                detail: content.stringValue("detail", "description") ?? "", done: (content.data["metadata"]?.value as? [String: String])?["done"] == "true")
+        case .schedule:
+            return FlareCalendarContent(id: content.stringValue("scheduleId") ?? "", title: content.stringValue("title") ?? content.previewText,
+                timeRange: content.stringValue("timeRange") ?? "")
+        case .miniProgram:
+            return FlareMiniAppContent(appId: content.stringValue("appId") ?? "", title: content.stringValue("title") ?? content.previewText,
+                pagePath: content.stringValue("pagePath") ?? "", thumbnailUrl: content.stringValue("thumbnailUrl"), description: content.stringValue("description"))
+        case .announcement:
+            return FlareAnnouncementContent(id: content.stringValue("announcementId") ?? "", title: content.stringValue("headline", "title") ?? content.previewText,
+                body: content.stringValue("body") ?? "")
+        case .system, .notification:
+            return FlareNotificationContent(content.previewText)
+        case .custom, .placeholder:
+            return FlareGenericContent(contentType: content.contentType.rawValue, label: content.previewText)
         }
-        #else
-        MessageBubble(message: message, outgoing: outgoing, deliveryState: deliveryState, onOpenMedia: onOpenMedia)
-        #endif
     }
 
-    private var debugMenuButton: some View {
-        Button {
-            onShowActions(message)
-        } label: {
-            Image(systemName: "ellipsis")
-                .font(.system(size: 12, weight: .bold))
-                .foregroundStyle(FlareDesign.textSecondary)
-                .frame(width: 26, height: 26)
-                .background(FlareDesign.surface.opacity(0.94))
-                .clipShape(Circle())
-                .shadow(color: Color.black.opacity(0.08), radius: 8, x: 0, y: 3)
-        }
-        .buttonStyle(.plain)
-        .accessibilityLabel(Text("Message menu"))
-    }
-
-    private var deliveryState: MessageDeliveryState {
-        // 判定收敛到核心那一份（MessageActions.deliveryState，由 sdk-spec 向量钉住），
-        // 这里只做 AppMessage → 原始字段的适配。
-        let kind = MessageActions.deliveryState(
+    private var presentationStatus: FlareMessageDeliveryStatus {
+        let kind = MessageDelivery.state(
             isSelf: outgoing,
-            status: message.menuNumericStatus,
+            status: message.numericStatus,
             isRead: message.isRead,
             isPending: messaging.pendingMessageKeys.contains(message.appStableId),
             isFailed: messaging.failedMessageKeys.contains(message.appStableId)
                 || message.localState?.failed == true
         )
         switch kind {
-        case .none: return .none
+        case .none: return .sent
         case .sending: return .sending
         case .failed: return .failed
         case .delivered: return .delivered
@@ -111,14 +145,37 @@ struct MessageRow: View {
         }
     }
 
-}
+    private func openMedia(_ content: FlareMessageContent) {
+        mediaTask?.cancel()
+        mediaTask = Task { @MainActor in
+            if content is FlareFileContent {
+                await messaging.saveToDownloads(message)
+                return
+            }
+            let kind: MediaPreview.Kind
+            let title: String
+            let source: String
+            switch content {
+            case let image as FlareImageContent:
+                kind = .image; source = image.url; title = image.alt ?? String(localized: "Image")
+            case let video as FlareVideoContent:
+                kind = .video; source = video.url; title = String(localized: "Video")
+            case let audio as FlareAudioContent:
+                kind = .audio; source = audio.url; title = String(localized: "Voice")
+            default: return
+            }
+            let direct = source.hasPrefix("/") ? URL(fileURLWithPath: source) : URL(string: source)
+            guard let url = await messaging.resolveMediaDisplayURL(fileId: message.content?.mediaFileId, directURL: direct),
+                  !Task.isCancelled, url.isFileURL || ["https", "http"].contains(url.scheme?.lowercased() ?? "") else { return }
+            onOpenMedia(MediaPreview(kind: kind, url: url, title: title))
+        }
+    }
 
-enum MessageDeliveryState: Equatable {
-    case none
-    case sending
-    case failed
-    case delivered
-    case read
+    private static let timeFormatter: DateFormatter = {
+        let formatter = DateFormatter()
+        formatter.dateFormat = "HH:mm"
+        return formatter
+    }()
 }
 
 struct MessagePreviewSheet: View {
@@ -195,71 +252,42 @@ private struct MessagePreviewMetaRow: View {
     }
 }
 
-struct MessageActionSheet: View {
+/// Long-press actions for one message: the kit `MessageActionSheetView`. The core decides what is
+/// allowed (`domain::message_actions`) and the kit owns the standard actions' labels, icons and
+/// groups; this asks the core, adds the one action the kit has no entry for, and dispatches.
+///
+/// This used to draw its own sheet (reaction strip, quick-action tiles, action rows) on top of a
+/// Swift copy of the core's rules, and looked nothing like the kit sheet on the other platforms.
+struct MessageActionSheetHost: View {
     @Environment(\.dismiss) private var dismiss
     @EnvironmentObject private var messaging: MessagingViewModel
     let message: AppMessage
     var onDismiss: (() -> Void)?
-    @State private var reactionPickerExpanded = false
-    @State private var pinScopeDialogOpen = false
+    @State private var availability: FlareMessageActionAvailability?
     @State private var editDialogOpen = false
     @State private var editDraft = ""
-    private let sheetInset = FlareDesign.Spacing.lg
-
-    private var model: MessageMenuModel {
-        MessageMenuModel.build(
-            message: message,
-            currentUserId: messaging.currentUserId,
-            isConnected: messaging.runtimeStatus == .ready,
-            isPending: messaging.pendingMessageKeys.contains(message.appStableId) || message.localState?.sending == true,
-            isFailed: messaging.failedMessageKeys.contains(message.appStableId) || message.localState?.failed == true,
-            multiSelectMode: messaging.isMessageMultiSelectMode
-        )
-    }
-
-    private var actionGroups: [[MessageMenuActionItem]] {
-        let pinnedKeys: Set<MessageMenuActionKey> = [.multiSelect, .mark, .pin, .pinSelf, .unpin]
-        let primary = model.listActions.filter { pinnedKeys.contains($0.key) }
-        let secondary = model.listActions.filter { !pinnedKeys.contains($0.key) }
-        return [primary, secondary].filter { !$0.isEmpty }
-    }
 
     var body: some View {
         ScrollView {
-            VStack(spacing: FlareDesign.Spacing.sm) {
-                Capsule()
-                    .fill(Color.black.opacity(0.12))
-                    .frame(width: 36, height: 4)
-                    .padding(.top, FlareDesign.Spacing.md)
-                    .padding(.bottom, FlareDesign.Spacing.sm)
-
-                reactionStrip
-                if reactionPickerExpanded {
-                    expandedReactionPicker
-                } else {
-                    quickActions
-                    actionList
-                }
+            if let availability {
+                MessageActionSheetView(
+                    availability: availability,
+                    actions: availability.canEdit && message.content?.contentType == .richText
+                        ? [FlareMessageMenuEntry(id: "editRich", label: String(localized: "Edit rich text"), icon: "rich-text")]
+                        : [],
+                    onAction: dispatch,
+                    onReact: react
+                )
             }
-            .frame(maxWidth: .infinity)
-            .padding(.bottom, FlareDesign.Spacing.lg)
         }
-        .background(FlareDesign.surfaceAlt)
+        // The kit sheet paints bgSecondary; the rest of the system sheet matches it.
+        .background(FlareDesign.appBackground)
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .ignoresSafeArea(.container, edges: [.horizontal, .bottom])
-        .animation(.easeOut(duration: 0.18), value: reactionPickerExpanded)
-        .confirmationDialog("Choose pin scope", isPresented: $pinScopeDialogOpen, titleVisibility: .visible) {
-            Button("Pin for everyone") {
-                close()
-                Task { await messaging.messageAction("pin", message: message) }
-            }
-            Button("Pin only for me") {
-                close()
-                Task { await messaging.messageAction("pinSelf", message: message) }
-            }
-            Button("Cancel", role: .cancel) {}
-        } message: {
-            Text("Choose whether this pinned message is visible to everyone or only your own device.")
+        .task(id: message.appStableId) {
+            let answer = await messaging.actionAvailability(for: message)
+            // Nothing allowed right now: no sheet beats an empty one.
+            if answer == FlareMessageActionAvailability() { close() } else { availability = answer }
         }
         // 编辑消息：曾经点一下"编辑"就把原文替换成写死的 "Edited from iOS example"，
         // 没有任何输入入口 —— 用户的内容就这么没了。
@@ -274,167 +302,42 @@ struct MessageActionSheet: View {
         }
     }
 
-    @ViewBuilder
-    private var reactionStrip: some View {
-        if !model.reactions.isEmpty {
-            HStack(spacing: FlareDesign.Spacing.md) {
-                ForEach(model.reactions, id: \.self) { reaction in
-                    reactionButton(reaction)
-                }
-
-                Button {
-                    reactionPickerExpanded.toggle()
-                } label: {
-                    Image(systemName: reactionPickerExpanded ? "chevron.down" : "ellipsis")
-                        .font(.system(size: 18, weight: .semibold))
-                        .foregroundStyle(FlareDesign.textSecondary)
-                        .frame(width: 42, height: 42)
-                        .background(FlareDesign.surfaceAlt)
-                        .clipShape(RoundedRectangle(cornerRadius: FlareDesign.Radius.large, style: .continuous))
-                }
-                .buttonStyle(.plain)
-            }
-            .frame(maxWidth: .infinity)
-            .padding(.horizontal, sheetInset)
-            .padding(.vertical, FlareDesign.Spacing.sm)
-            .background(FlareDesign.surfaceAlt)
-        }
+    private func react(_ reaction: String) {
+        runAndClose { await messaging.messageAction("react", message: message, reaction: reaction) }
     }
 
-    private var expandedReactionPicker: some View {
-        VStack(alignment: .leading, spacing: FlareDesign.Spacing.md) {
-            HStack {
-                Text(String(localized: "Pick an emoji"))
-                    .font(.subheadline.weight(.bold))
-                    .foregroundStyle(FlareDesign.textPrimary)
-                Spacer()
-                Button(String(localized: "Collapse")) {
-                    reactionPickerExpanded = false
-                }
-                .font(.caption.weight(.bold))
-                .foregroundStyle(FlareDesign.brand)
-            }
-            LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: FlareDesign.Spacing.sm), count: 6), spacing: FlareDesign.Spacing.sm) {
-                ForEach(MessageMenuModel.expandedReactions, id: \.self) { reaction in
-                    reactionButton(reaction)
-                }
-            }
-        }
-        .padding(FlareDesign.Spacing.md)
-        .background(FlareDesign.surface)
-        .clipShape(RoundedRectangle(cornerRadius: FlareDesign.Radius.xl, style: .continuous))
-        .frame(maxWidth: .infinity)
-        .padding(.horizontal, sheetInset)
-    }
-
-    private func reactionButton(_ reaction: String) -> some View {
-        Button {
-            close()
-            Task { await messaging.messageAction("react", message: message, reaction: reaction) }
-        } label: {
-            Text(reaction)
-                .font(.system(size: 26))
-                .frame(width: 44, height: 44)
-                .background(FlareDesign.surface)
-                .clipShape(RoundedRectangle(cornerRadius: FlareDesign.Radius.large, style: .continuous))
-                .overlay(
-                    RoundedRectangle(cornerRadius: FlareDesign.Radius.large, style: .continuous)
-                        .stroke(Color.black.opacity(0.035), lineWidth: 1)
-                )
-        }
-        .buttonStyle(.plain)
-    }
-
-    @ViewBuilder
-    private var quickActions: some View {
-        if !model.quickActions.isEmpty {
-            HStack(spacing: FlareDesign.Spacing.md) {
-                ForEach(model.quickActions) { item in
-                    MessageQuickAction(
-                        symbol: item.symbol,
-                        title: item.title,
-                        tint: item.isDestructive ? FlareDesign.danger : FlareDesign.brand
-                    ) {
-                        dispatch(item.key)
-                    }
-                }
-            }
-            .frame(maxWidth: .infinity, alignment: .center)
-            .padding(.horizontal, FlareDesign.Spacing.md)
-            .padding(.bottom, FlareDesign.Spacing.xs)
-        }
-    }
-
-    @ViewBuilder
-    private var actionList: some View {
-        if !actionGroups.isEmpty {
-            VStack(spacing: FlareDesign.Spacing.md) {
-                ForEach(Array(actionGroups.enumerated()), id: \.offset) { _, group in
-                    VStack(spacing: 0) {
-                        ForEach(group) { item in
-                            MessageActionRow(
-                                symbol: item.symbol,
-                                title: item.title,
-                                role: item.isDestructive ? .destructive : nil
-                            ) {
-                                dispatch(item.key)
-                            }
-                        }
-                    }
-                    .background(FlareDesign.surface)
-                    .clipShape(RoundedRectangle(cornerRadius: FlareDesign.Radius.xl, style: .continuous))
-                    .overlay(
-                        RoundedRectangle(cornerRadius: FlareDesign.Radius.xl, style: .continuous)
-                            .stroke(Color.black.opacity(0.04), lineWidth: 1)
-                    )
-                }
-            }
-            .frame(maxWidth: .infinity)
-            .padding(.horizontal, sheetInset)
-        }
-    }
-
-    private func dispatch(_ key: MessageMenuActionKey) {
-        switch key {
-        case .reply:
+    private func dispatch(_ id: String) {
+        switch id {
+        case "reply":
             close()
             messaging.startReply(to: message)
-        case .forward:
+        case "forward":
             runAndClose { await messaging.forwardMessage(message) }
-        case .recall:
-            runAndClose { await messaging.messageAction("recall", message: message) }
-        case .resend:
+        case "resend":
             runAndClose { await messaging.retry(message) }
-        case .multiSelect:
+        case "multiSelect":
             close()
             messaging.startMultiSelect(with: message)
-        case .mark:
-            runAndClose { await messaging.messageAction("mark", message: message) }
-        case .pin:
-            pinScopeDialogOpen = true
-        case .pinSelf:
-            runAndClose { await messaging.messageAction("pinSelf", message: message) }
-        case .unpin:
-            runAndClose { await messaging.messageAction("unpin", message: message) }
-        case .copy:
+        case "copy":
             close()
             PlatformClipboard.copy(message.previewText)
             Task { await messaging.noteMessageAction("message.copy", detail: "Copied \(message.appStableId)") }
-        case .preview:
+        case "preview":
             close()
             Task { @MainActor in
                 try? await Task.sleep(nanoseconds: 220_000_000)
                 messaging.openMessagePreview(message)
             }
-        case .edit:
+        case "edit":
             editDraft = message.previewText
             editDialogOpen = true
-        case .editRich:
-            runAndClose { await messaging.messageAction("editRich", message: message) }
-        case .delete:
-            runAndClose { await messaging.messageAction("deleteSelf", message: message) }
-        case .save:
+        case "save":
             runAndClose { await messaging.saveToDownloads(message) }
+        case "delete":
+            runAndClose { await messaging.messageAction("deleteSelf", message: message) }
+        default:
+            // recall / mark / pin / pinSelf / unpin / editRich are message actions of the same name.
+            runAndClose { await messaging.messageAction(id, message: message) }
         }
     }
 
@@ -449,69 +352,6 @@ struct MessageActionSheet: View {
         } else {
             dismiss()
         }
-    }
-}
-
-private struct MessageQuickAction: View {
-    let symbol: String
-    let title: String
-    let tint: Color
-    let action: () -> Void
-
-    var body: some View {
-        Button(action: action) {
-            VStack(spacing: FlareDesign.Spacing.xs) {
-                Image(systemName: symbol)
-                    .font(.system(size: 22, weight: .semibold))
-                    .foregroundStyle(tint)
-                    .frame(height: 26)
-                Text(title)
-                    .font(.caption2.weight(.semibold))
-                    .foregroundStyle(tint)
-                    .lineLimit(1)
-                    .minimumScaleFactor(0.85)
-            }
-            .frame(width: 76, height: 60)
-            .background(FlareDesign.surface)
-            .clipShape(RoundedRectangle(cornerRadius: FlareDesign.Radius.large, style: .continuous))
-            .overlay(
-                RoundedRectangle(cornerRadius: FlareDesign.Radius.large, style: .continuous)
-                    .stroke(Color.black.opacity(0.04), lineWidth: 1)
-            )
-        }
-        .buttonStyle(.plain)
-    }
-}
-
-private struct MessageActionRow: View {
-    let symbol: String
-    let title: String
-    var role: ButtonRole?
-    let action: () -> Void
-
-    private var tint: Color {
-        role == .destructive ? FlareDesign.danger : FlareDesign.brand
-    }
-
-    var body: some View {
-        Button(role: role, action: action) {
-            HStack(spacing: FlareDesign.Spacing.lg) {
-                Image(systemName: symbol)
-                    .font(.system(size: 22, weight: .regular))
-                    .foregroundStyle(tint)
-                    .frame(width: 30, height: 30)
-                Text(title)
-                    .font(.subheadline.weight(.semibold))
-                    .foregroundStyle(role == .destructive ? FlareDesign.danger : FlareDesign.textPrimary)
-                Spacer()
-            }
-            .frame(height: 58)
-            .padding(.horizontal, FlareDesign.Spacing.lg)
-        }
-        .buttonStyle(.plain)
-
-        Divider()
-            .padding(.leading, 62)
     }
 }
 

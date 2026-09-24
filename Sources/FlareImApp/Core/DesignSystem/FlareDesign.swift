@@ -1,32 +1,43 @@
 import SwiftUI
 import FlareIMUI
+#if canImport(UIKit)
+import UIKit
+#elseif canImport(AppKit)
+import AppKit
+#endif
 
 // FlareDesign 是 app 的设计门面,现已**委托给 kit 设计 token**
 // (FlareColors / FlareSizes,源自 flare-im-design/tokens/tokens.json),
 // 不再持有并行的硬编码色值/尺寸。调用点(FlareDesign.brand / .Spacing.lg 等)保持不变,
-// 值统一收敛到 kit,与三端一致。app 目前按 light 呈现,故色取 FlareColors.light。
+// 随平台外观解析 light/dark，支持系统主题和应用内主题选择。
 enum FlareDesign {
-    private static let c = FlareColors.light
+    private static func themed(_ light: Color, _ dark: Color) -> Color {
+        #if canImport(UIKit)
+        return Color(uiColor: UIColor { traits in
+            traits.userInterfaceStyle == .dark ? UIColor(dark) : UIColor(light)
+        })
+        #else
+        return Color(nsColor: NSColor(name: nil) { appearance in
+            appearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua ? NSColor(dark) : NSColor(light)
+        })
+        #endif
+    }
 
-    static let brand = c.primary
-    static let brandSoft = c.bgSelected
-    static let accent = c.info
-    static let appBackground = c.bgSecondary
-    static let surface = c.bgPrimary
-    static let surfaceAlt = c.bgTertiary
-    static let textPrimary = c.textPrimary
-    static let textSecondary = c.textSecondary
-    static let textTertiary = c.textTertiary
-    static let success = c.success
-    static let warning = c.warning
-    static let danger = c.error
-    static let incoming = c.bubbleOther
-    static let outgoing = c.bubbleSelf
-    static let outgoingText = Color.white
-    static let callBackground = Color(red: 0.07, green: 0.08, blue: 0.10)
-
-    static let sidebarWidth: CGFloat = 340
-    static let detailWidth: CGFloat = 320
+    static let brand = themed(FlareColors.light.primary, FlareColors.dark.primary)
+    static let brandSoft = themed(FlareColors.light.bgSelected, FlareColors.dark.bgSelected)
+    static let accent = themed(FlareColors.light.info, FlareColors.dark.info)
+    static let appBackground = themed(FlareColors.light.bgSecondary, FlareColors.dark.bgSecondary)
+    static let surface = themed(FlareColors.light.bgPrimary, FlareColors.dark.bgPrimary)
+    static let surfaceAlt = themed(FlareColors.light.bgTertiary, FlareColors.dark.bgTertiary)
+    static let textPrimary = themed(FlareColors.light.textPrimary, FlareColors.dark.textPrimary)
+    static let textSecondary = themed(FlareColors.light.textSecondary, FlareColors.dark.textSecondary)
+    static let textTertiary = themed(FlareColors.light.textTertiary, FlareColors.dark.textTertiary)
+    static let success = themed(FlareColors.light.success, FlareColors.dark.success)
+    static let warning = themed(FlareColors.light.warning, FlareColors.dark.warning)
+    static let danger = themed(FlareColors.light.error, FlareColors.dark.error)
+    static let incoming = themed(FlareColors.light.messageIncomingBackground, FlareColors.dark.messageIncomingBackground)
+    static let outgoing = themed(FlareColors.light.messageOutgoingBackground, FlareColors.dark.messageOutgoingBackground)
+    static let outgoingText = themed(FlareColors.light.messageOutgoingForeground, FlareColors.dark.messageOutgoingForeground)
 
     /// 向后兼容别名：等价于 `Radius.medium`。新代码直接用 `FlareDesign.Radius.*`。
     static let radius: CGFloat = Radius.medium
@@ -42,7 +53,7 @@ enum FlareDesign {
 
     /// 间距标尺（4pt 基准网格），委托到 kit `FlareSizes`。
     enum Spacing {
-        static let xxs: CGFloat = 2
+        static let xxs = FlareSizes.spacingXs / 2
         static let xs = FlareSizes.spacingXs       // 4
         static let sm = FlareSizes.spacingSm       // 8
         static let md = FlareSizes.spacingMd       // 12
@@ -53,11 +64,11 @@ enum FlareDesign {
 
     /// 字体标尺。集中字号/字重，便于全局统一与无障碍缩放。
     enum Typography {
-        static let largeTitle = Font.system(size: 25, weight: .heavy)
-        static let title = Font.system(size: 22, weight: .bold)
-        static let headline = Font.system(size: 16, weight: .semibold)
-        static let body = Font.system(size: 15, weight: .regular)
-        static let callout = Font.system(size: 14, weight: .medium)
+        static let largeTitle = Font.title2.weight(.semibold)
+        static let title = Font.title3.weight(.bold)
+        static let headline = Font.headline
+        static let body = Font.body
+        static let callout = Font.callout.weight(.medium)
         static let caption = Font.caption
         static let captionStrong = Font.caption.weight(.semibold)
     }
@@ -70,23 +81,5 @@ enum FlareDesign {
         case .warning: return warning
         case .danger: return danger
         }
-    }
-}
-
-struct FlarePanel: ViewModifier {
-    func body(content: Content) -> some View {
-        content
-            .background(FlareDesign.surface)
-            .clipShape(RoundedRectangle(cornerRadius: FlareDesign.Radius.medium, style: .continuous))
-            .overlay(
-                RoundedRectangle(cornerRadius: FlareDesign.Radius.medium, style: .continuous)
-                    .stroke(Color.black.opacity(0.06), lineWidth: 1)
-            )
-    }
-}
-
-extension View {
-    func flarePanel() -> some View {
-        modifier(FlarePanel())
     }
 }

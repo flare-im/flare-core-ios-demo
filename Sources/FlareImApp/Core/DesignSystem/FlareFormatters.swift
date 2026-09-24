@@ -47,13 +47,17 @@ enum FlareFormatters {
             // 核心抛的是 i18n key（如 sdk.message.card.avatar.invalid_url），
             // 直接透出 message 会把这串 key 显示给用户。交给 kit 统一翻成人话。
             let raw = flare.errorDescription ?? flare.message
-            return FlareSdkErrorText.describe(
-                raw,
-                fallback: String(localized: "The operation failed."))
+            return humanizedError(raw)
         }
-        return FlareSdkErrorText.describe(
-            error.localizedDescription,
-            fallback: String(localized: "The operation failed."))
+        return humanizedError(error.localizedDescription)
+    }
+
+    private static func humanizedError(_ raw: String) -> String {
+        let value = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !value.isEmpty, !value.hasPrefix("sdk.") else {
+            return String(localized: "The operation failed.")
+        }
+        return value
     }
 
     static func jsonPreview(_ value: Any) -> String {

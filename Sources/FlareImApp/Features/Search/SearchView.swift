@@ -19,6 +19,7 @@ struct SearchView: View {
                         onSubmit: { Task { await viewModel.search() } }
                     )
                     InputView(text: $viewModel.draft.senderId, placeholder: String(localized: "Sender"))
+                        .identifierInput()
                         .frame(maxWidth: 180)
                     Picker("Kind", selection: $viewModel.draft.kind) {
                         ForEach(MessageSearchKind.allCasesForExample, id: \.rawValue) { kind in
@@ -45,11 +46,11 @@ struct SearchView: View {
             Divider()
 
             if viewModel.results.isEmpty {
-                EmptyStateView(
+                FlareIMUI.EmptyStateView(
                     title: String(localized: "No search results"),
-                    message: String(localized: "Enter a keyword or use empty typed filters to probe the SDK search path."),
-                    symbol: "magnifyingglass"
-                )
+                    description: String(localized: "Enter a keyword or use empty typed filters to probe the SDK search path."),
+                    icon: "search"
+                ).frame(maxWidth: .infinity, maxHeight: .infinity)
             } else {
                 ScrollView {
                     LazyVStack(spacing: FlareDesign.Spacing.md) {
