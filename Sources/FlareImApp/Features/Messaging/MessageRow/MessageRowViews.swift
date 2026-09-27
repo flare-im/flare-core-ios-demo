@@ -9,7 +9,11 @@ struct MessageRow: View {
     let message: AppMessage
     var onOpenMedia: (MediaPreview) -> Void = { _ in }
     var onShowActions: (AppMessage) -> Void = { _ in }
+    /// Saves the message's file to the download location (a file tap); the chat says how it went.
+    var onSave: (AppMessage) -> Void = { _ in }
     @State private var mediaTask: Task<Void, Never>?
+    /// A picture's local copy in the SDK media cache, else a fetchable URL (``MessagingViewModel/resolvePicture(fileId:)``).
+    @State private var picture: PictureAccess?
 
     private var outgoing: Bool {
         guard let current = messaging.currentUserId else { return false }
@@ -46,6 +50,19 @@ struct MessageRow: View {
             }
         }
         .onDisappear { mediaTask?.cancel() }
+        // Pictures are drawn from the SDK media cache once it holds them; until then from a signed URL while the
+        // core fetches the picture into the cache in the background.
+        .task(id: pictureKey) {
+            guard let pictureKey else { return }
+            picture = await messaging.resolvePicture(fileId: pictureKey)
+        }
+    }
+
+    /// The stored file id of this message's picture, when it is one.
+    private var pictureKey: String? {
+        guard let content = message.content, !message.isRecalled,
+              content.contentType == .image || content.contentType == .imageGroup else { return nil }
+        return content.mediaFileId
     }
 
     /// The message's reactions for the kit `ReactionSummaryView`. A recalled message shows none.
@@ -81,10 +98,13 @@ struct MessageRow: View {
         case .text, .richText, .quote, .forward, .thread:
             return FlareTextContent(content.previewText)
         case .image, .imageGroup:
-            guard let url = content.mediaSourceURL?.absoluteString else {
+            // The local copy is only ever a path the core returned from its cache, never an address from content.
+            let local = picture?.localPath
+            let url = content.mediaSourceURL?.absoluteString ?? picture?.url ?? ""
+            guard !url.isEmpty || local != nil else {
                 return FlarePlaceholderContent(content.previewText)
             }
-            return FlareImageContent(url: url, alt: content.stringValue("description", "title"))
+            return FlareImageContent(url: url, alt: content.stringValue("description", "title"), localPath: local)
         case .video:
             guard let url = content.mediaSourceURL?.absoluteString else {
                 return FlarePlaceholderContent(content.previewText)
@@ -149,7 +169,7 @@ struct MessageRow: View {
         mediaTask?.cancel()
         mediaTask = Task { @MainActor in
             if content is FlareFileContent {
-                await messaging.saveToDownloads(message)
+                onSave(message)
                 return
             }
             let kind: MediaPreview.Kind
@@ -157,6 +177,12 @@ struct MessageRow: View {
             let source: String
             switch content {
             case let image as FlareImageContent:
+                // A picture the cache already holds opens from this device.
+                if let local = image.localPath, !Task.isCancelled {
+                    onOpenMedia(MediaPreview(kind: .image, url: URL(fileURLWithPath: local), title: image.alt ?? String(localized: "Image"),
+                                             message: message))
+                    return
+                }
                 kind = .image; source = image.url; title = image.alt ?? String(localized: "Image")
             case let video as FlareVideoContent:
                 kind = .video; source = video.url; title = String(localized: "Video")
@@ -164,10 +190,12 @@ struct MessageRow: View {
                 kind = .audio; source = audio.url; title = String(localized: "Voice")
             default: return
             }
-            let direct = source.hasPrefix("/") ? URL(fileURLWithPath: source) : URL(string: source)
+            // An address from message content is only ever a web address: a file on this device is opened only
+            // when the core's media cache returned it.
+            let direct = safeExternalURL(source).flatMap(URL.init(string:))
             guard let url = await messaging.resolveMediaDisplayURL(fileId: message.content?.mediaFileId, directURL: direct),
                   !Task.isCancelled, url.isFileURL || ["https", "http"].contains(url.scheme?.lowercased() ?? "") else { return }
-            onOpenMedia(MediaPreview(kind: kind, url: url, title: title))
+            onOpenMedia(MediaPreview(kind: kind, url: url, title: title, message: message))
         }
     }
 
@@ -263,6 +291,8 @@ struct MessageActionSheetHost: View {
     @EnvironmentObject private var messaging: MessagingViewModel
     let message: AppMessage
     var onDismiss: (() -> Void)?
+    /// 保存: the chat saves the message to the download location and says how it went.
+    var onSave: ((AppMessage) -> Void)?
     @State private var availability: FlareMessageActionAvailability?
     @State private var editDialogOpen = false
     @State private var editDraft = ""
@@ -332,7 +362,8 @@ struct MessageActionSheetHost: View {
             editDraft = message.previewText
             editDialogOpen = true
         case "save":
-            runAndClose { await messaging.saveToDownloads(message) }
+            close()
+            onSave?(message)
         case "delete":
             runAndClose { await messaging.messageAction("deleteSelf", message: message) }
         default:

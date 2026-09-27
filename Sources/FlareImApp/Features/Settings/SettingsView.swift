@@ -3,6 +3,7 @@ import SwiftUI
 
 struct SettingsView: View {
     @EnvironmentObject private var settings: SettingsViewModel
+    @Environment(\.flareFeedback) private var feedback
 
     var body: some View {
         ScrollView {
@@ -64,22 +65,57 @@ struct SettingsView: View {
                 }
                 .padding(FlareDesign.Spacing.lg)
 
+                // Where "save" puts pictures, videos and files. An iOS app can only write its own folders (another
+                // one needs a security-scoped bookmark per pick), so the location is shown, not chosen; the default
+                // comes back only if a custom folder is somehow set.
                 VStack(alignment: .leading, spacing: FlareDesign.Spacing.md) {
-                    Text("Media cache")
+                    Text("Download location")
+                        .font(.headline)
+                    Text(settings.downloadLocation?.label ?? "—")
+                        .font(.body.weight(.semibold))
+                    Text("Saved pictures, videos and files go here. Open the Files app to find them.")
+                        .font(.caption)
+                        .foregroundStyle(FlareDesign.textSecondary)
+                    if let folder = settings.downloadLocation?.directory {
+                        Text(folder)
+                            .font(.caption2)
+                            .foregroundStyle(FlareDesign.textTertiary)
+                            .textSelection(.enabled)
+                    }
+                    if settings.downloadLocation?.isCustom == true {
+                        ButtonView(label: String(localized: "Use the default location"), variant: .secondary) {
+                            Task {
+                                if await !settings.resetDownloadLocation() {
+                                    feedback?.toast(MediaSaveCopy.unwritable, tone: .danger)
+                                }
+                            }
+                        }
+                    }
+                }
+                .padding(FlareDesign.Spacing.lg)
+                .task { await settings.refreshDownloadLocation() }
+
+                VStack(alignment: .leading, spacing: FlareDesign.Spacing.md) {
+                    Text("Image and file cache")
                         .font(.headline)
                     Text("Usage: \(settings.cacheStats ?? "—")")
                         .foregroundStyle(FlareDesign.textSecondary)
                     HStack {
                         ForEach([Int64(128), 256, 512], id: \.self) { mb in
-                            ButtonView(label: "\(mb)MB", variant: .secondary) { Task { await settings.setCacheMaxBytes(mb * 1024 * 1024) } }
+                            ButtonView(label: "\(mb)MB", variant: .secondary) {
+                                Task {
+                                    if await !settings.setCacheMaxBytes(mb * 1024 * 1024) {
+                                        feedback?.toast(String(localized: "The operation failed."), tone: .danger)
+                                    }
+                                }
+                            }
                         }
                     }
                     HStack {
-                        ButtonView(label: "Refresh", variant: .secondary) { Task { await settings.refreshCacheStats() } }
-                        ButtonView(label: "Clear cache", variant: .danger) { Task { await settings.clearCache() } }
+                        ButtonView(label: String(localized: "Refresh"), variant: .secondary) { Task { await settings.refreshCacheStats() } }
+                        ButtonView(label: String(localized: "Clear cache"), variant: .danger) { confirmClearCache() }
                     }
                 }
-
                 .padding(FlareDesign.Spacing.lg)
                 .task { await settings.refreshCacheStats() }
             }
@@ -87,4 +123,27 @@ struct SettingsView: View {
         }
         .background(FlareDesign.appBackground)
     }
+
+    /// Clearing cannot be undone, so it is asked first (kit confirmation; the clear runs inside it and a failure
+    /// keeps it open to retry). Pictures that were seen are downloaded again afterwards.
+    private func confirmClearCache() {
+        Task {
+            let cleared = await feedback?.confirm(FlareConfirmOptions(
+                title: String(localized: "Clear cache"),
+                description: String(localized: "Pictures you have seen will be downloaded again."),
+                target: settings.cacheStats,
+                confirmText: String(localized: "Clear cache"),
+                action: {
+                    if await !settings.clearCache() {
+                        throw MediaCacheClearError()
+                    }
+                }))
+            if cleared == true { feedback?.toast(String(localized: "Cache cleared"), tone: .success) }
+        }
+    }
+}
+
+/// The confirmation's failure line when the core could not clear its cache.
+private struct MediaCacheClearError: LocalizedError {
+    var errorDescription: String? { String(localized: "Could not clear the cache. Try again.") }
 }

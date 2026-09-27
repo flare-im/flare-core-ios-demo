@@ -8,6 +8,8 @@ struct ChatView: View {
     @EnvironmentObject private var search: SearchViewModel
     @EnvironmentObject private var messaging: MessagingViewModel
     @EnvironmentObject private var environment: AppEnvironment
+    @Environment(\.flareFeedback) private var feedback
+    @Environment(\.openURL) private var openURL
     let conversation: AppConversation
     var showsBackButton = false
     var onBack: () -> Void = {}
@@ -42,7 +44,7 @@ struct ChatView: View {
         }
         .background(FlareDesign.appBackground)
         .sheet(item: $actionMessage) { message in
-            MessageActionSheetHost(message: message, onDismiss: { actionMessage = nil })
+            MessageActionSheetHost(message: message, onDismiss: { actionMessage = nil }, onSave: save)
                 .presentationDetents([.medium, .large])
                 .presentationDragIndicator(.visible)
         }
@@ -71,6 +73,12 @@ struct ChatView: View {
         .onChange(of: conversation.conversationId) { _ in
             timelineFollowsTail = true
         }
+    }
+
+    /// Saves a message's picture, video or file to the download location through the core: the person sees it
+    /// being saved, then where it went (the Files app one tap away), or why it was not.
+    private func save(_ message: AppMessage) {
+        MediaSaveFeedback.save(message, messaging: messaging, feedback: feedback, openURL: openURL)
     }
 
     private func expandedComposerInputHeight(for availableHeight: CGFloat) -> CGFloat {
@@ -161,9 +169,9 @@ struct ChatView: View {
                             }
                             MessageRow(message: message, onOpenMedia: { preview in
                                 mediaPreview = preview
-                            }) { selected in
+                            }, onShowActions: { selected in
                                 actionMessage = selected
-                            }
+                            }, onSave: save)
                                 .id(message.appStableId)
                         }
                     }

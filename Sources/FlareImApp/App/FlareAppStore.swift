@@ -61,6 +61,7 @@ final class FlareAppStore: ObservableObject, AppLifecycle {
         // 装配完成后回填生命周期(self 此刻已完全初始化),破 store ↔ VM 强引用环。
         authViewModel.bind(lifecycle: self)
         settingsViewModel.bind(lifecycle: self)
+        settingsViewModel.bind(messaging: messagingViewModel)
         messagingViewModel.bind(lifecycle: self)
         sdkLabViewModel.bind(lifecycle: self)
     }

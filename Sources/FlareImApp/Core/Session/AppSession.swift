@@ -58,10 +58,8 @@ final class AppSession: ObservableObject {
         try await subscribeNativeEvents(client)
 
         // 配置 SDK 托管的媒体磁盘缓存（LRU + 去重，核心已实现）：设根目录 + 上限，
-        // 之后消息媒体经 media.cacheRemoteMedia 落到这里（离线可用、不重复下载）。
-        let mediaCacheRoot = dataURL.appendingPathComponent("media-cache").path
-        _ = try? await client.media.setMediaCacheRoot(["root": AnySendable(mediaCacheRoot)])
-        _ = try? await client.media.setMediaCacheMaxBytes(["maxBytes": AnySendable(Int64(268_435_456))]) // 256MB
+        // 之后看过的图片经 media.resolve_access(autoCache) 落到这里（离线可用、不重复下载）。
+        await configureMediaCache(client, dataURL: dataURL)
 
         currentUserId = draft.userId
         isLoggedIn = true
@@ -90,9 +88,7 @@ final class AppSession: ObservableObject {
         try await client.prepare(["userId": AnySendable(draft.userId)])
         try await subscribeNativeEvents(client)
 
-        let mediaCacheRoot = dataURL.appendingPathComponent("media-cache").path
-        _ = try? await client.media.setMediaCacheRoot(["root": AnySendable(mediaCacheRoot)])
-        _ = try? await client.media.setMediaCacheMaxBytes(["maxBytes": AnySendable(Int64(268_435_456))]) // 256MB
+        await configureMediaCache(client, dataURL: dataURL)
 
         currentUserId = draft.userId
         isLoggedIn = true
@@ -147,6 +143,20 @@ final class AppSession: ObservableObject {
         isLoggedIn = false
         currentUserId = nil
         return try await start(draft: draft, dataURL: dataURL, progress: progress)
+    }
+
+    /// 媒体缓存放在本账号数据目录下，上限 256 MB。
+    private func configureMediaCache(_ client: any FlareImClientProtocol, dataURL: URL) async {
+        _ = try? await client.media.setMediaCacheRoot(Self.mediaCacheRootRequest(dataURL: dataURL))
+        _ = try? await client.media.setMediaCacheMaxBytes(["maxBytes": AnySendable(Self.mediaCacheMaxBytes)])
+    }
+
+    nonisolated static let mediaCacheMaxBytes: Int64 = 268_435_456
+
+    /// `media.set_cache_root` 的请求：核心契约的键是 `absolutePath`（此前发的 `root` 只被新版核心兼容，
+    /// 旧核心会当成没给路径、缓存落到默认目录）。
+    nonisolated static func mediaCacheRootRequest(dataURL: URL) -> [String: AnySendable] {
+        ["absolutePath": AnySendable(dataURL.appendingPathComponent("media-cache").path)]
     }
 
     /// 平台原始信号桥：NWPathMonitor → SDK 网络变化（core 主动重连，不等心跳超时）、

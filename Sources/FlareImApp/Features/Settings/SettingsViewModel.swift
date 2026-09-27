@@ -10,6 +10,8 @@ final class SettingsViewModel: ObservableObject {
     private let environment: AppEnvironment
     private let sdkLab: SdkLabViewModel
     private weak var lifecycle: AppLifecycle?
+    /// 清缓存后让时间线忘掉记住的本地副本。
+    private weak var messaging: MessagingViewModel?
     private var cancellables = Set<AnyCancellable>()
 
     init(
@@ -30,6 +32,10 @@ final class SettingsViewModel: ObservableObject {
     /// 由组合根在装配后回填（打破 store ↔ VM 强引用环）。
     func bind(lifecycle: AppLifecycle) {
         self.lifecycle = lifecycle
+    }
+
+    func bind(messaging: MessagingViewModel) {
+        self.messaging = messaging
     }
 
     var themeChoice: Binding<ThemeChoice> {
@@ -56,56 +62,72 @@ final class SettingsViewModel: ObservableObject {
     func dispose() async { await lifecycle?.dispose() }
 
     // MARK: - 媒体缓存管理（SDK 托管的磁盘缓存：用量 / 上限 / 清空）
-    @Published var cacheStats: String?
+    @Published private(set) var cacheUsage: MediaCacheUsage?
+    /// 用量那一行的文字：`12.3 MB / 256.0 MB · 4 files`，没读到时为 nil（界面显示 —）。
+    var cacheStats: String? { cacheUsage?.summary }
 
     // 这三个都是**用户动作**，失败必须让用户知道。
     //
     // 原来一律 `try?` 吞掉：点"清空缓存"什么都没发生、改上限没生效，
-    // 界面照样一片祥和 —— 用户以为做成了。而这个 app 本来就有统一的
-    // `environment.run` + `lastError` + StatusBanner，只有这里绕过去了。
+    // 界面照样一片祥和 —— 用户以为做成了。这里走统一的 `environment.run`（Lab 记录），
+    // 并把成败交还给界面去说（设置页不显示 lastError，只靠它等于没说）。
     // 读取（stats）保持静默降级：拿不到就不显示，不值得打扰用户。
 
     func refreshCacheStats() async {
         guard let client = session.client else { return }
         if let raw = try? await client.media.getMediaCacheStats() {
-            cacheStats = Self.formatCacheStats(raw)
+            cacheUsage = MediaCacheUsage(raw)
         }
     }
 
-    func setCacheMaxBytes(_ bytes: Int64) async {
-        guard let client = session.client else { return }
+    @discardableResult
+    func setCacheMaxBytes(_ bytes: Int64) async -> Bool {
+        guard let client = session.client else { return false }
+        var ok = false
         await environment.run("media.setMediaCacheMaxBytes") {
             _ = try await client.media.setMediaCacheMaxBytes(["maxBytes": AnySendable(bytes)])
+            ok = true
         }
         await refreshCacheStats()
+        return ok
     }
 
-    func clearCache() async {
-        guard let client = session.client else { return }
+    /// 清空 SDK 媒体缓存；看过的图片之后会重新下载。返回是否清掉了。
+    @discardableResult
+    func clearCache() async -> Bool {
+        guard let client = session.client else { return false }
+        var ok = false
         await environment.run("media.clearMediaCache") {
             try await client.media.clearMediaCache()
+            ok = true
         }
+        if ok { messaging?.forgetPictureCopies() }
         await refreshCacheStats()
+        return ok
     }
 
-    private static func formatCacheStats(_ stats: [String: AnySendable]) -> String {
-        func num(_ keys: [String]) -> Int64? {
-            for k in keys {
-                let v = stats[k]?.value
-                if let n = v as? Int64 { return n }
-                if let n = v as? Int { return Int64(n) }
-                if let n = v as? Double { return Int64(n) }
-                if let n = v as? NSNumber { return n.int64Value }
-            }
-            return nil
+    // MARK: - 下载位置（「保存」写到哪：核心 media.user_download_get_directory）
+
+    /// iOS 默认是本应用 Documents/flare（Info.plist 开了文件共享，「文件」App 里看得到）；
+    /// iOS 不能任选文件夹（要逐个安全书签），所以只显示位置，自定义了才给「恢复默认位置」。
+    @Published private(set) var downloadLocation: DownloadLocationState?
+
+    func refreshDownloadLocation() async {
+        guard let client = session.client else { return }
+        if let raw = try? await client.media.getUserDownloadDirectory() {
+            downloadLocation = DownloadLocationState(raw)
         }
-        func mb(_ b: Int64) -> String { String(format: "%.1f MB", Double(b) / 1_048_576.0) }
-        let used = num(["usedBytes", "totalBytes", "sizeBytes", "bytes"])
-        let maxB = num(["maxBytes", "limitBytes", "capacityBytes"])
-        let count = num(["entryCount", "fileCount", "count", "entries"])
-        var parts = used.map(mb) ?? "—"
-        if let maxB { parts += " / \(mb(maxB))" }
-        if let count { parts += " · \(count) files" }
-        return parts
+    }
+
+    /// 回到平台默认位置（不带 directory 即默认）。返回是否成功。
+    @discardableResult
+    func resetDownloadLocation() async -> Bool {
+        guard let client = session.client else { return false }
+        var ok = false
+        await environment.run("media.setUserDownloadDirectory") {
+            downloadLocation = DownloadLocationState(try await client.media.setUserDownloadDirectory([:]))
+            ok = true
+        }
+        return ok
     }
 }

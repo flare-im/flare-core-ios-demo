@@ -4,6 +4,9 @@ import SwiftUI
 
 struct SearchView: View {
     @ObservedObject var viewModel: SearchViewModel
+    @EnvironmentObject private var messaging: MessagingViewModel
+    @Environment(\.flareFeedback) private var feedback
+    @Environment(\.openURL) private var openURL
 
     var body: some View {
         VStack(spacing: 0) {
@@ -59,7 +62,8 @@ struct SearchView: View {
                                 Text(message.conversationId)
                                     .font(.caption.monospaced())
                                     .foregroundStyle(FlareDesign.textSecondary)
-                                MessageRow(message: message)
+                                // A found file saves to the download location, as it does in the chat.
+                                MessageRow(message: message, onSave: save)
                             }
                             .padding(.horizontal, FlareDesign.Spacing.xl)
                         }
@@ -69,6 +73,10 @@ struct SearchView: View {
             }
         }
         .background(FlareDesign.appBackground)
+    }
+
+    private func save(_ message: AppMessage) {
+        MediaSaveFeedback.save(message, messaging: messaging, feedback: feedback, openURL: openURL)
     }
 }
 

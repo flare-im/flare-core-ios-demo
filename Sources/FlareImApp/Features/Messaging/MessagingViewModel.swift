@@ -293,19 +293,57 @@ final class MessagingViewModel: ObservableObject {
         )
     }
 
-    /// 把媒体存到系统下载目录（对应主流 IM「保存」）：走 SDK media.downloadFileToDownloads。
-    func saveToDownloads(_ message: AppMessage) async {
-        guard let client else { return }
-        guard let fileId = message.content?.mediaFileId, !fileId.isEmpty else {
-            appendLab("media.download", status: "warn", detail: "no media id")
-            return
+    /// 保存图片、视频、文件：由核心 SDK 存进「下载位置」（`media.download_to_user_directory`；看过的图片直接从
+    /// 本地缓存拷出，不再走网络）。结果给界面说出来 —— 以前失败只进 SDK Lab 日志，用户点了保存什么都看不到。
+    func saveToDevice(_ message: AppMessage, now: Date = Date()) async -> MediaSaveOutcome {
+        guard let target = MediaSaveTarget.of(message.content, now: now) else {
+            appendLab("media.download_to_user_directory", status: "warn", detail: "nothing to save in \(message.appStableId)")
+            return .failed(MediaSaveCopy.nothingToSave)
+        }
+        guard let client else { return .failed(MediaSaveCopy.failed) }
+        do {
+            let saved = try await client.media.downloadToUserDirectory(target.request)
+            appendLab("media.download_to_user_directory", status: "ok", detail: FlareFormatters.jsonPreview(saved))
+            return MediaSaveOutcome.from(saved)
+        } catch {
+            appendLab("media.download_to_user_directory", status: "warn", detail: FlareFormatters.errorText(error))
+            return MediaSaveOutcome.failure(error)
+        }
+    }
+
+    /// 看过的图片的本地副本（SDK 媒体缓存），按文件 id 记住；没有时拿短时 URL，核心在后台把它拉进缓存
+    /// （`media.resolve_access` + `autoCache`），之后再问就是本地路径 —— 看过的图不再重复下载。
+    private var pictureCopies = LocalPictureCopies()
+    private var pictureURLs: [String: (url: String, at: Date)] = [:]
+    private static let pictureURLReuse: TimeInterval = 20
+
+    func resolvePicture(fileId: String?) async -> PictureAccess? {
+        guard let mediaId = fileId?.trimmingCharacters(in: .whitespacesAndNewlines), !mediaId.isEmpty else { return nil }
+        if let local = pictureCopies.path(mediaId) { return PictureAccess(localPath: local, url: nil) }
+        let now = Date()
+        let recent = pictureURLs[mediaId].flatMap { now.timeIntervalSince($0.at) < Self.pictureURLReuse ? $0.url : nil }
+        guard pictureCopies.shouldAsk(mediaId, now: now) || recent == nil, let client else {
+            return recent.map { PictureAccess(localPath: nil, url: $0) }
         }
         do {
-            let saved = try await client.media.downloadFileToDownloads(["fileId": AnySendable(fileId)])
-            appendLab("media.download", status: "ok", detail: FlareFormatters.jsonPreview(saved))
+            let access = PictureAccess(try await client.media.resolveMediaAccess([
+                "fileId": AnySendable(mediaId),
+                "expiresIn": AnySendable(3600),
+                "autoCache": AnySendable(true)
+            ]))
+            pictureCopies.record(mediaId, localPath: access.localPath, now: now)
+            if access.localPath == nil, let url = access.url { pictureURLs[mediaId] = (url, now) }
+            return access
         } catch {
-            appendLab("media.download", status: "warn", detail: FlareFormatters.errorText(error))
+            appendLab("media.resolve_access", status: "warn", detail: "\(mediaId): \(FlareFormatters.errorText(error))")
+            return recent.map { PictureAccess(localPath: nil, url: $0) }
         }
+    }
+
+    /// 缓存清掉后，记住的本地副本全部作废，下次重新问核心。
+    func forgetPictureCopies() {
+        pictureCopies.reset()
+        pictureURLs = [:]
     }
 
     func startReply(to message: AppMessage) {
@@ -366,19 +404,12 @@ final class MessagingViewModel: ObservableObject {
             return directURL
         }
         guard let client else { return directURL }
-        // 优先经 SDK 托管磁盘缓存拿本地路径（去重 + LRU + 离线，不重复下载）。
-        if let cached = try? await client.media.cacheRemoteMedia([
-            "fileId": AnySendable(mediaId),
-            "expiresIn": AnySendable(3600)
-        ]), let localPath = (cached["localPath"]?.value as? String)?.trimmingCharacters(in: .whitespacesAndNewlines),
-            !localPath.isEmpty {
-            return URL(fileURLWithPath: localPath)
-        }
-        // 退而求其次：签名 URL（不落缓存，AsyncImage 自身缓存）。
+        // 本地副本优先（SDK 托管缓存：去重 + LRU + 离线）；没有就拿签名 URL，核心在后台把它拉进缓存。
         do {
             let resolved = try await client.media.resolveMediaAccess([
                 "fileId": AnySendable(mediaId),
-                "expiresIn": AnySendable(3600)
+                "expiresIn": AnySendable(3600),
+                "autoCache": AnySendable(true)
             ])
             if let url = displayURL(fromResolvedMediaAccess: resolved) {
                 return url
