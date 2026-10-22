@@ -75,9 +75,7 @@ enum KitStrings {
         strings.messageListLoadOlder = "Load earlier messages"
         strings.messagePending = "Waiting to send"
         strings.messageSending = "Sending"
-        strings.messageRetrying = "Retrying"
         strings.messageSent = "Sent"
-        strings.messageDelivered = "Delivered"
         strings.messageRead = "Read"
         strings.messageFailed = "Failed to send"
 

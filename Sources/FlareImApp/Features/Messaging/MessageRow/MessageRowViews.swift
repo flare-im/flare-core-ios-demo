@@ -160,7 +160,7 @@ struct MessageRow: View {
         case .none: return .sent
         case .sending: return .sending
         case .failed: return .failed
-        case .delivered: return .delivered
+        case .delivered: return .sent
         case .read: return .read
         }
     }
